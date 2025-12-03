@@ -1,0 +1,11 @@
+# Core Dependencies
+loguru>=0.7.0
+
+# UI & Visualization Dependencies
+streamlit>=1.37.0
+streamlit-agraph>=0.0.45
+plotly>=5.18.0
+networkx>=3.0
+
+# Optional / Development
+pytest>=7.0.0
