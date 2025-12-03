@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airflan-workflow"
+version = "0.1.0"
+description = "Enterprise-Grade Workflow Orchestration for Python"
+readme = "README.md"
+authors = [
+  { name="El-Qajjam Mohammed", email="elqajjam@gmail.com" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "loguru>=0.7.0",
+    "streamlit>=1.37.0",
+    "streamlit-agraph>=0.0.45",
+    "plotly>=5.18.0",
+    "networkx>=3.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/noobjam/airflan"
+"Bug Tracker" = "https://github.com/noobjam/airflan/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["airflan*"]

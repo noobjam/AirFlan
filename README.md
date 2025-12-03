@@ -29,6 +29,17 @@ AirFlan is a lightweight, modular, and robust workflow orchestrator designed for
     pip install -r requirements.txt
     ```
 
+### Local Development (Editable Install)
+
+If you want to use AirFlan in another project locally without publishing to PyPI:
+
+1.  Navigate to your **other project's** directory.
+2.  Install AirFlan in editable mode:
+    ```bash
+    pip install -e /path/to/cloned/airflan
+    ```
+    *(Replace `/path/to/cloned/airflan` with the actual path to this repository)*
+
 ## Quick Start
 
 Define your workflow using the simple decorator API:

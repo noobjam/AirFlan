@@ -355,7 +355,8 @@ class WorkflowOrchestrator:
         
         if is_port_open(6969):
             try:
-                ui_file = Path(__file__).parent.parent / "air_flan_ui.py"
+                # UI script is now inside the package
+                ui_file = Path(__file__).parent / "ui.py"
                 state_file_abs = str(self._state_file.absolute())
                 log_file_abs = str(self._log_file.absolute())
                 
