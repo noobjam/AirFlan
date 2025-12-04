@@ -140,16 +140,32 @@ def load_state_safe():
     return None
 
 def load_logs_safe():
-    """Safe log loading"""
+    """Safe log loading with efficient tailing for large files"""
     try:
-        if not Path(LOG_FILE).exists(): return ""
-        with open(LOG_FILE, "r") as f:
-            lines = f.readlines()
-            # Clean ANSI codes
-            clean = [l.replace("\033[95m", "").replace("\033[0m", "") for l in lines[-200:]]
-            return "".join(clean)
-    except:
-        return ""
+        log_path = Path(LOG_FILE)
+        if not log_path.exists(): return ""
+        
+        file_size = log_path.stat().st_size
+        # Read last 50KB (~500 lines)
+        read_size = min(file_size, 50 * 1024) 
+        
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            if file_size > read_size:
+                f.seek(file_size - read_size)
+                # Discard partial line at start
+                f.readline()
+            
+            content = f.read()
+            
+            # Simple ANSI cleanup
+            content = content.replace("\033[95m", "").replace("\033[0m", "")
+            content = content.replace("\033[94m", "").replace("\033[96m", "")
+            content = content.replace("\033[92m", "").replace("\033[93m", "")
+            content = content.replace("\033[91m", "").replace("\033[1m", "")
+            
+            return content
+    except Exception:
+        return "Error reading logs"
 
 def get_status_color(status):
     return {

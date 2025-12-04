@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "airflan-workflow"
-version = "0.1.0"
+version = "0.1.2"
 description = "Enterprise-Grade Workflow Orchestration for Python"
 readme = "README.md"
 authors = [
