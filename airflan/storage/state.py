@@ -1,49 +1,54 @@
-"""
-AirFlan Monitoring Module - State Manager
-
-This module handles workflow state persistence for UI integration.
-"""
-
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
 from loguru import logger
+from sqlalchemy.orm import Session
 
 from ..core.task import Task, TaskResult
-
+from .backend import DatabaseSession, DagRun, TaskInstance
 
 class StateManager:
     """
-    Manages workflow state persistence for real-time UI updates
+    Manages workflow state persistence
     
-    Writes workflow state to JSON file that can be consumed by
-    the Streamlit UI or other monitoring tools.
+    Writes workflow state to SQLAlchemy Database for historical tracking
+    and UI consumption.
     """
     
-    def __init__(self, state_file: Path, log_file: Path):
+    def __init__(self, db_url: Optional[str] = None):
         """
-        Initialize state manager
+        Initialize state manager with database connection
         
         Args:
-            state_file: Path to state JSON file
-            log_file: Path to log file
+            db_url: Optional database connection string (defaults to local SQLite)
         """
-        self.state_file = state_file
-        self.log_file = log_file
+        self.db = DatabaseSession(db_url)
+        self.db.init_db()
+        self.run_id = None
         
-        # Initialize empty files
-        self._init_files()
-    
-    def _init_files(self) -> None:
-        """Initialize empty state and log files"""
+    def start_run(self, workflow_name: str, run_id: str) -> None:
+        """Initialize a new DAG run in the database"""
+        self.run_id = run_id
+        session = self.db.get_session()
         try:
-            self.state_file.write_text(json.dumps({}))
-            self.log_file.write_text("")
+            # Create a new DagRun entry
+            dag_run = DagRun(
+                dag_id=workflow_name,
+                run_id=run_id,
+                status="running",
+                start_time=datetime.utcnow()
+            )
+            session.add(dag_run)
+            session.commit()
+            logger.debug(f"Started DagRun: {run_id}")
         except Exception as e:
-            logger.warning(f"Failed to initialize state files: {e}")
-    
+            session.rollback()
+            logger.error(f"Failed to start DagRun: {e}")
+        finally:
+            session.close()
+
     def update_state(
         self,
         workflow_name: str,
@@ -51,57 +56,92 @@ class StateManager:
         results: Dict[str, TaskResult]
     ) -> None:
         """
-        Update workflow state file
+        Update workflow state in the database
         
         Args:
             workflow_name: Name of the workflow
             tasks: Dictionary of tasks
             results: Dictionary of task results
         """
-        try:
-            state = {
-                "name": workflow_name,
-                "timestamp": datetime.now().isoformat(),
-                "tasks": {
-                    name: {"depends_on": task.depends_on}
-                    for name, task in tasks.items()
-                },
-                "results": {}
-            }
+        if not self.run_id:
+            logger.warning("Attempted to update state before start_run()")
+            return
             
-            # Add task statuses
-            for name in tasks.keys():
+        session = self.db.get_session()
+        try:
+            # Check if workflow is finished
+            is_finished = len(results) == len(tasks) and all(r.status.value in ['completed', 'failed', 'skipped'] for r in results.values())
+            has_failures = any(r.status.value == 'failed' for r in results.values())
+            
+            # Update DagRun terminal status
+            if is_finished:
+                dag_run = session.query(DagRun).filter_by(run_id=self.run_id).first()
+                if dag_run:
+                    dag_run.status = "failed" if has_failures else "completed"
+                    dag_run.end_time = datetime.utcnow()
+            
+            # Upsert TaskInstance statuses
+            for name, task in tasks.items():
+                ti = session.query(TaskInstance).filter_by(
+                    run_id=self.run_id, task_id=name
+                ).first()
+                
+                if not ti:
+                    ti = TaskInstance(
+                        task_id=name,
+                        dag_id=workflow_name,
+                        run_id=self.run_id
+                    )
+                    session.add(ti)
+                
                 if name in results:
                     result = results[name]
-                    state["results"][name] = {
-                        "status": result.status.value,
-                        "execution_time": result.execution_time,
-                    }
-                else:
-                    state["results"][name] = {
-                        "status": "pending",
-                        "execution_time": 0
-                    }
-            
-            # Write to file
-            with open(self.state_file, "w") as f:
-                json.dump(state, f, indent=2)
-            
-            logger.debug(f"State updated: {self.state_file}")
+                    ti.status = result.status.value
+                    ti.execution_time = result.execution_time
+                    ti.attempt_count = result.attempt_count
+                    
+                    if result.error_trace:
+                        ti.error_trace = result.error_trace
+                        
+                    if result.status.value in ['completed', 'failed', 'skipped'] and not ti.end_time:
+                        ti.end_time = datetime.utcnow()
+                        
+            session.commit()
             
         except Exception as e:
-            logger.error(f"Failed to update state: {e}")
-    
+            session.rollback()
+            import traceback
+            logger.error(f"Failed to update state in DB: {e}\n{traceback.format_exc()}")
+        finally:
+            session.close()
+            
     def load_state(self) -> Optional[Dict]:
         """
-        Load workflow state from file
-        
-        Returns:
-            State dictionary or None if not found
+        [DEPRECATED] Loads state for UI compatibility layer.
+        In the future, the UI will query the DB directly.
         """
+        session = self.db.get_session()
         try:
-            if self.state_file.exists():
-                return json.loads(self.state_file.read_text())
+            runs = session.query(DagRun).order_by(DagRun.start_time.desc()).limit(1).all()
+            if not runs:
+                return None
+                
+            latest_run = runs[0]
+            tasks = session.query(TaskInstance).filter_by(run_id=latest_run.run_id).all()
+            
+            return {
+                "name": latest_run.dag_id,
+                "timestamp": latest_run.start_time.isoformat(),
+                "status": latest_run.status,
+                "results": {
+                    t.task_id: {
+                        "status": t.status,
+                        "execution_time": t.execution_time
+                    } for t in tasks
+                }
+            }
         except Exception as e:
-            logger.warning(f"Failed to load state: {e}")
-        return None
+            logger.warning(f"Failed to load state from DB: {e}")
+            return None
+        finally:
+            session.close()

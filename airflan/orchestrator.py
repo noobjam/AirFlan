@@ -83,10 +83,7 @@ class WorkflowOrchestrator:
         self.executor = executor or ParallelExecutor(max_workers=max_parallel)
         
         # State management
-        self._project_root = Path.cwd()
-        self._state_file = self._project_root / "workflow_state.json"
-        self._log_file = self._project_root / "workflow_logs.txt"
-        self.state_manager = StateManager(self._state_file, self._log_file)
+        self.state_manager = StateManager()
         
         # Execution history
         self._execution_history: List[Dict] = []
@@ -130,13 +127,6 @@ class WorkflowOrchestrator:
                 format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - [{file.name}:{line}] - {message}",
                 rotation="50 MB",
                 retention="10 days"
-            )
-            
-            # UI log file
-            logger.add(
-                self._log_file,
-                level="INFO",
-                format="{time:HH:mm:ss} | {level:<8} | {message}"
             )
         
         return logger
@@ -270,6 +260,8 @@ class WorkflowOrchestrator:
             logger.info("Started experiment run")
         
         workflow_start = time.time()
+        run_id = f"run_{self.name}_{int(workflow_start)}"
+        self.state_manager.start_run(self.name, run_id)
         
         try:
             # Create scheduler
@@ -366,8 +358,7 @@ class WorkflowOrchestrator:
             raise
         finally:
             if enable_ui:
-                self.state_manager.update_state(self.name, self.tasks, self.results)
-                self.logger.info("💡 Keep browser open to view results. UI will remain accessible.")
+                self.logger.info("💡 Run `streamlit run airflan/ui.py` to view results.")
         
         return self.results
     

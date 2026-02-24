@@ -5,7 +5,10 @@ This module provides thread-safe shared state management for workflows.
 """
 
 import threading
-from typing import Any, Dict
+from typing import Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..mlops.experiment_tracker import ExperimentTracker
 
 
 class WorkflowContext:
@@ -21,10 +24,16 @@ class WorkflowContext:
         >>> user_id = context.get('user_id')
     """
     
-    def __init__(self):
-        """Initialize empty context with thread lock"""
+    def __init__(self, experiment_tracker: Optional['ExperimentTracker'] = None):
+        """
+        Initialize empty context with thread lock
+        
+        Args:
+            experiment_tracker: Optional experiment tracker for logging metrics/params
+        """
         self._data: Dict[str, Any] = {}
         self._lock = threading.Lock()
+        self._experiment_tracker = experiment_tracker
 
     def set(self, key: str, value: Any) -> None:
         """
@@ -85,6 +94,47 @@ class WorkflowContext:
         """Check if key exists in context"""
         with self._lock:
             return key in self._data
+    
+    # ==================== Experiment Tracking ====================
+    
+    def log_metric(self, name: str, value: float, step: Optional[int] = None) -> None:
+        """
+        Log a metric to the experiment tracker
+        
+        Args:
+            name: Metric name
+            value: Metric value
+            step: Optional step number
+        """
+        if self._experiment_tracker:
+            self._experiment_tracker.log_metric(name, value, step)
+    
+    def log_params(self, params: Dict[str, Any]) -> None:
+        """
+        Log parameters to the experiment tracker
+        
+        Args:
+            params: Dictionary of parameter names and values
+        """
+        if self._experiment_tracker:
+            self._experiment_tracker.log_params(params)
+    
+    def log_artifact(self, file_path: str, artifact_name: Optional[str] = None,
+                     artifact_type: Optional[str] = None) -> None:
+        """
+        Log an artifact to the experiment tracker
+        
+        Args:
+            file_path: Path to artifact file
+            artifact_name: Optional artifact name
+            artifact_type: Optional artifact type
+        """
+        if self._experiment_tracker:
+            self._experiment_tracker.log_artifact(file_path, artifact_name, artifact_type)
+    
+    def get_experiment_tracker(self) -> Optional['ExperimentTracker']:
+        """Get the experiment tracker instance"""
+        return self._experiment_tracker
     
     def __repr__(self) -> str:
         """String representation of context"""

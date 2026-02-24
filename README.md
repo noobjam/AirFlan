@@ -13,6 +13,7 @@ AirFlan is a lightweight, modular, and robust workflow orchestrator designed for
 *   **Robust Error Handling**: Built-in retries, timeouts, and error propagation.
 *   **Smart Caching**: Avoid redundant computation with result caching.
 *   **Context Sharing**: Thread-safe data passing between tasks.
+*   **🧪 Experiment Tracking**: Native MLOps capabilities with metrics, parameters, and artifact logging.
 *   **Enterprise UI**: A professional, minimalist dashboard for real-time monitoring and visualization.
 *   **Modular Architecture**: Extensible design with pluggable executors and storage backends.
 
@@ -75,26 +76,68 @@ To launch the UI, simply run your workflow with `enable_ui=True`. The dashboard 
 *   **Execution Logs**: Live stream of task logs.
 *   **Performance Stats**: Task duration and status distribution.
 
+## 🧪 Experiment Tracking (NEW!)
+
+AirFlan now includes native experiment tracking for MLOps workflows! Track metrics, parameters, and artifacts just like MLflow or W&B, but fully integrated with your workflows.
+
+### Quick Example
+
+```python
+# Enable experiment tracking
+wf = WorkflowOrchestrator(
+    name="ml_training",
+    experiment_name="mnist_classifier"  # ← Enable tracking!
+)
+
+@wf.task(name="train")
+def train_model(context: WorkflowContext):
+    # Log hyperparameters
+    context.log_params({"lr": 0.001, "batch_size": 32})
+    
+    # Log metrics during training
+    for epoch in range(10):
+        loss = train_one_epoch()
+        context.log_metric("loss", loss, step=epoch)
+    
+    # Save artifacts
+    torch.save(model, "model.pth")
+    context.log_artifact("model.pth", artifact_type="model")
+```
+
+### View Experiments Dashboard
+
+```bash
+streamlit run airflan/ui/experiments_dashboard.py
+```
+
+Features:
+*   📊 **Metrics Visualization**: Interactive charts for training curves
+*   ⚙️ **Parameters Tracking**: Compare hyperparameters across runs
+*   📦 **Artifact Management**: Save and browse models, plots, data
+*   📈 **Run Comparison**: Side-by-side comparison of multiple experiments
+
+See [`docs/experiment_tracking.md`](docs/experiment_tracking.md) for the complete guide!
+
 ## Project Structure
 
 ```
 AirFlan/
-├── airflan/               # Core Library
-│   ├── core/              # Task, Scheduler, Executor, Context
-│   ├── storage/           # Cache & State Management
-│   └── orchestrator.py    # Main Entry Point
-├── air_flan_ui.py         # Monitoring Dashboard
-├── demo_workflow.py       # Example Enterprise Pipeline
-└── requirements.txt       # Dependencies
+├── airflan/                  # Core Library
+│   ├── core/                 # Task, Scheduler, Executor, Context
+│   ├── storage/              # Cache & State Management
+│   ├── mlops/                # Experiment Tracking (NEW!)
+│   ├── ui/                   # Dashboards
+│   └── orchestrator.py       # Main Entry Point
+├── demo_workflow.py          # Example Enterprise Pipeline
+├── demo_ml_experiment.py     # ML Experiment Tracking Demo (NEW!)
+└── requirements.txt          # Dependencies
 ```
 
 ## Advanced Usage
 
-Check out `docs/how_to.md` for detailed guides on:
-*   Sequential vs. Parallel Execution
-*   Context Management
-*   Retry Policies & Timeouts
-*   Result Caching
+Check out the docs for detailed guides:
+*   `docs/how_to.md` - Sequential vs. Parallel Execution, Context Management, Retry Policies, Caching
+*   `docs/experiment_tracking.md` - Complete MLOps experiment tracking guide (NEW!)
 
 ## License
 

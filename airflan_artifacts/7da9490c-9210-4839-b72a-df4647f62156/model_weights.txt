@@ -1,0 +1,4 @@
+# Trained Model Weights
+Final Accuracy: 0.8909
+Architecture: CNN
+Weights: [simulated binary data]

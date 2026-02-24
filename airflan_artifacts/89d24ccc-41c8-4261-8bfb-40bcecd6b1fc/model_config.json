@@ -1,0 +1,10 @@
+{
+  "model_type": "CNN",
+  "input_shape": [
+    28,
+    28,
+    1
+  ],
+  "num_classes": 10,
+  "final_accuracy": 0.8921575947074614
+}
