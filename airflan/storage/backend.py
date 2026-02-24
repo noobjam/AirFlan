@@ -68,7 +68,12 @@ class DatabaseSession:
             db_path = Path.cwd() / "airflan_metadata.db"
             db_url = f"sqlite:///{db_path}"
             
-        self.engine: Engine = create_engine(db_url, echo=False)
+        connect_args = {}
+        if db_url.startswith("sqlite"):
+            # Enable multithreading and high timeouts for SQLite to prevent 'database locked'
+            connect_args = {'check_same_thread': False, 'timeout': 15}
+            
+        self.engine: Engine = create_engine(db_url, echo=False, connect_args=connect_args)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         
     def init_db(self):

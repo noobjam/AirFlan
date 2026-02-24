@@ -255,6 +255,8 @@ def load_state_from_db(run_id=None):
         state = {
             "name": target_run.dag_id,
             "status": target_run.status,
+            "start_time": target_run.start_time.isoformat() if target_run.start_time else None,
+            "end_time": target_run.end_time.isoformat() if target_run.end_time else None,
             "tasks": {t.task_id: {"depends_on": []} for t in tasks},
             "results": {
                 t.task_id: {
@@ -327,6 +329,22 @@ def dashboard(selected_run_id):
     failed = sum(1 for r in results.values() if r["status"] == "failed")
     running = sum(1 for r in results.values() if r["status"] == "running")
     
+    import dateutil.parser
+    from datetime import datetime
+    
+    duration_str = "0.0s"
+    if state.get("start_time"):
+        try:
+            start_dt = dateutil.parser.isoparse(state["start_time"])
+            if state.get("end_time"):
+                end_dt = dateutil.parser.isoparse(state["end_time"])
+                dur = (end_dt - start_dt).total_seconds()
+            else:
+                dur = (datetime.utcnow() - start_dt).total_seconds()
+            duration_str = f"{dur:.1f}s"
+        except:
+            pass
+    
     # --- Top Row: DAG Visualization ---
     st.markdown("<h3 style='margin-bottom: -1rem;'>DAG Visualization</h3>", unsafe_allow_html=True)
     
@@ -386,12 +404,12 @@ def dashboard(selected_run_id):
     st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
     
     # --- Bottom Row: Metrics & Data ---
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Active Flows</div>
+                <div class="metric-label">Tasks Total</div>
                 <div class="metric-value">{total}</div>
             </div>
         """, unsafe_allow_html=True)
@@ -417,6 +435,14 @@ def dashboard(selected_run_id):
             <div class="metric-container">
                 <div class="metric-label">Failed Runs</div>
                 <div class="metric-value" style="color: #fb7185; text-shadow: 0 0 10px rgba(251, 113, 133, 0.4);">{failed}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+    with col5:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">Run Time</div>
+                <div class="metric-value" style="color: #c9d1d9;">{duration_str}</div>
             </div>
         """, unsafe_allow_html=True)
 
