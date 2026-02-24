@@ -303,7 +303,7 @@ def dashboard(selected_run_id):
                     data.append({
                         "Task": name,
                         "Status": res["status"].upper(),
-                        "Time": f"{res.get('execution_time', 0):.2f}s"
+                        "Time": f"{res.get('execution_time') or 0:.2f}s"
                     })
                 st.dataframe(
                     data, 
