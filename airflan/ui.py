@@ -10,6 +10,13 @@ from pathlib import Path
 import streamlit as st
 from streamlit_agraph import agraph, Node, Edge, Config
 
+try:
+    from airflan.storage.backend import DatabaseSession, DagRun, TaskInstance
+    from sqlalchemy.orm import Session
+except ImportError:
+    st.error("Could not import AirFlan DatabaseBackend. Run `pip install -e .` First")
+    st.stop()
+
 # ----------------------------------
 # Configuration
 # ----------------------------------
@@ -167,6 +174,50 @@ def load_logs_safe():
     except Exception:
         return "Error reading logs"
 
+def load_state_from_db():
+    """Load latest workflow state directly from SQLite Database"""
+    db = DatabaseSession()
+    session = db.get_session()
+    
+    try:
+        latest_run = session.query(DagRun).order_by(DagRun.start_time.desc()).first()
+        if not latest_run:
+            return None
+            
+        tasks = session.query(TaskInstance).filter_by(run_id=latest_run.run_id).all()
+        
+        # Build state dict expected by the UI graph 
+        # Since we don't store task dependencies in the DB directly right now,
+        # we still require finding out the edges. If we can't find dependencies in DB,
+        # we will render tasks without edges until we implement DB schema for edges.
+        state = {
+            "name": latest_run.dag_id,
+            "status": latest_run.status,
+            "tasks": {t.task_id: {"depends_on": []} for t in tasks},
+            "results": {
+                t.task_id: {
+                    "status": t.status, 
+                    "execution_time": t.execution_time
+                } for t in tasks
+            }
+        }
+        
+        # Fallback to merge dependencies from JSON if available and matches dag_id
+        # (This is a temporary hack until Dag structure is serialized in Phase 6)
+        json_state = load_state_safe()
+        if json_state and json_state.get('name') == latest_run.dag_id:
+            for t_id, data in json_state.get('tasks', {}).items():
+                if t_id in state["tasks"]:
+                    state["tasks"][t_id]["depends_on"] = data.get("depends_on", [])
+                    
+        return state
+    except Exception as e:
+        import traceback
+        st.error(f"Error loading from DB: {e}\n{traceback.format_exc()}")
+        return None
+    finally:
+        session.close()
+
 def get_status_color(status):
     return {
         "running": "#3b82f6",   # Blue
@@ -192,9 +243,9 @@ st.markdown("""
 # ----------------------------------
 # Main Dashboard (Fragment)
 # ----------------------------------
-@st.fragment(run_every=1)
+@st.fragment(run_every=2)
 def dashboard():
-    state = load_state_safe()
+    state = load_state_from_db() or load_state_safe()
     logs = load_logs_safe()
     
     col_metrics, col_graph = st.columns([1, 3])

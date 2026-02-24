@@ -18,3 +18,4 @@ dask
 distributed
 sqlalchemy
 croniter
+click
