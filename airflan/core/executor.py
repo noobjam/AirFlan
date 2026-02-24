@@ -14,6 +14,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
+try:
+    from dask.distributed import Client, as_completed as dask_as_completed
+    DASK_AVAILABLE = True
+except ImportError:
+    DASK_AVAILABLE = False
+
 from loguru import logger
 
 from .context import WorkflowContext
@@ -335,3 +341,155 @@ class ParallelExecutor(SequentialExecutor):
                     logger.error(f"Parallel execution error for {task.name}: {e}")
         
         return results
+
+class DaskExecutor(SequentialExecutor):
+    """Execute tasks in parallel using a Dask cluster"""
+    
+    def __init__(self, scheduler_address: Optional[str] = None, cache_enabled: bool = True):
+        super().__init__(cache_enabled)
+        self.scheduler_address = scheduler_address
+        if not DASK_AVAILABLE:
+            raise ImportError("Dask is not installed. Please install with: pip install 'dask[distributed]'")
+            
+        try:
+            if scheduler_address:
+                self.client = Client(scheduler_address)
+                logger.info(f"Connected to Dask cluster at {scheduler_address}")
+            else:
+                self.client = Client(processes=False) # Local cluster for simplicity right now
+                logger.info(f"Started local Dask cluster at {self.client.dashboard_link}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Dask client: {e}")
+            raise
+            
+    def execute_tasks(
+        self, 
+        tasks: List[Task], 
+        context: WorkflowContext,
+        check_deps: Callable[[Task], bool],
+        check_condition: Callable[[Task], bool],
+        results: Dict[str, TaskResult],
+        results_lock: threading.Lock,
+        on_update: Optional[Callable] = None
+    ) -> Dict[str, TaskResult]:
+        """Execute tasks in parallel using Dask"""
+        if len(tasks) == 1:
+            # Single task - use sequential execution locally to avoid overhead
+            return super().execute_tasks(
+                tasks, context, check_deps, check_condition, results, results_lock, on_update
+            )
+            
+        # For Dask, we need to carefully serialize our tasks and context.
+        # Since WorkflowContext uses locks, we pass a dictionary snapshot.
+        context_dict = context.to_dict()
+        
+        futures_map = {}
+        for task in tasks:
+            # Pre-flight condition and dependency checks before sending to cluster
+            if not check_condition(task):
+                logger.info(f"⊘ Skipping {task.name} - condition not met")
+                with results_lock:
+                    results[task.name] = TaskResult(status=TaskStatus.SKIPPED)
+                continue
+                
+            if not check_deps(task):
+                logger.warning(f"⊘ Skipping {task.name} - dependencies failed")
+                with results_lock:
+                    results[task.name] = TaskResult(status=TaskStatus.SKIPPED)
+                continue
+                
+            # Submit to Dask
+            # We are wrapping the actual execution logic to run on the worker
+            future = self.client.submit(
+                self._dask_worker_wrapper, 
+                task, 
+                context_dict
+            )
+            futures_map[future] = task
+            
+            # Mark as running locally
+            with results_lock:
+                results[task.name] = TaskResult(
+                    status=TaskStatus.RUNNING,
+                    start_time=datetime.now().isoformat()
+                )
+            if on_update:
+                on_update()
+        
+        # Gather results as they complete
+        if futures_map:
+            for future in dask_as_completed(list(futures_map.keys())):
+                task = futures_map[future]
+                try:
+                    result = future.result()
+                    with results_lock:
+                        results[task.name] = result
+                    context.set(f"result_{task.name}", result.output)
+                except Exception as e:
+                    logger.error(f"Dask execution error for {task.name}: {e}")
+                    with results_lock:
+                        results[task.name] = TaskResult(
+                            status=TaskStatus.FAILED,
+                            error=e,
+                            error_trace=traceback.format_exc(),
+                            start_time=datetime.now().isoformat(),
+                            end_time=datetime.now().isoformat()
+                        )
+                        
+                if on_update:
+                    on_update()
+                    
+                # Stop workflow if critical task failed
+                if results[task.name].status == TaskStatus.FAILED and not task.skip_on_failure:
+                    self.client.cancel(list(futures_map.keys())) # Cancel remaining
+                    raise Exception(f"Critical task {task.name} failed. Stopping workflow.")
+                    
+        return results
+
+    @staticmethod
+    def _dask_worker_wrapper(task: Task, context_dict: Dict) -> TaskResult:
+        """
+        Standalone wrapper function that runs ON the Dask worker.
+        It does not have access to 'self' (the orchestrator/executor).
+        """
+        start_time = datetime.now()
+        attempts = 0
+        max_attempts = task.retry_count + 1
+        
+        # We recreate a minimal context just for this execution environment
+        worker_context = WorkflowContext()
+        worker_context.update(context_dict)
+        
+        while attempts < max_attempts:
+            attempts += 1
+            try:
+                task_kwargs = task.kwargs.copy()
+                if 'context' in task.func.__code__.co_varnames:
+                    task_kwargs['context'] = worker_context
+                    
+                # Note: We aren't handling timeout here inside the worker easily,
+                # but could use signals or Dask's built-in timeouts if needed.
+                output = task.func(*task.args, **task_kwargs)
+                end_time = datetime.now()
+                
+                return TaskResult(
+                    status=TaskStatus.COMPLETED,
+                    output=output,
+                    execution_time=(end_time - start_time).total_seconds(),
+                    start_time=start_time.isoformat(),
+                    end_time=end_time.isoformat(),
+                    attempt_count=attempts
+                )
+            except Exception as e:
+                if attempts >= max_attempts:
+                    end_time = datetime.now()
+                    return TaskResult(
+                        status=TaskStatus.FAILED,
+                        error=e,
+                        error_trace=traceback.format_exc(),
+                        execution_time=(end_time - start_time).total_seconds(),
+                        start_time=start_time.isoformat(),
+                        end_time=end_time.isoformat(),
+                        attempt_count=attempts
+                    )
+                time.sleep(task.retry_delay)

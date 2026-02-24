@@ -8,7 +8,7 @@ scheduler, and execution engines.
 from .task import Task, TaskResult, TaskStatus
 from .context import WorkflowContext
 from .scheduler import WorkflowScheduler
-from .executor import BaseExecutor, SequentialExecutor, ParallelExecutor
+from .executor import BaseExecutor, SequentialExecutor, ParallelExecutor, DaskExecutor
 
 __all__ = [
     'Task',
@@ -19,4 +19,5 @@ __all__ = [
     'BaseExecutor',
     'SequentialExecutor',
     'ParallelExecutor',
+    'DaskExecutor',
 ]

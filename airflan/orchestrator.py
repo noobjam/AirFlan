@@ -19,9 +19,10 @@ from loguru import logger
 
 from .core import (
     Task, TaskResult, TaskStatus, WorkflowContext,
-    WorkflowScheduler, SequentialExecutor, ParallelExecutor
+    WorkflowScheduler, SequentialExecutor, ParallelExecutor, DaskExecutor
 )
 from .storage import CacheManager, StateManager
+from .mlops import ExperimentTracker
 
 
 class Colors:
@@ -51,7 +52,8 @@ class WorkflowOrchestrator:
         log_dir: Optional[str] = None,
         max_parallel: int = 4,
         enable_cache: bool = True,
-        executor = None
+        executor = None,
+        experiment_name: Optional[str] = None
     ):
         """
         Initialize workflow orchestrator
@@ -62,14 +64,21 @@ class WorkflowOrchestrator:
             max_parallel: Max concurrent tasks for parallel execution
             enable_cache: Enable result caching
             executor: Custom executor (defaults to ParallelExecutor)
+            experiment_name: Optional experiment name for MLOps tracking
         """
         self.name = name
         self.tasks: Dict[str, Task] = {}
         self.results: Dict[str, TaskResult] = {}
         self._results_lock = threading.Lock()
         
+        # Experiment tracking
+        self.experiment_tracker = None
+        if experiment_name:
+            self.experiment_tracker = ExperimentTracker(experiment_name)
+            logger.info(f"Experiment tracking enabled: {experiment_name}")
+        
         # Core components
-        self.context = WorkflowContext()
+        self.context = WorkflowContext(experiment_tracker=self.experiment_tracker)
         self.cache = CacheManager(enabled=enable_cache)
         self.executor = executor or ParallelExecutor(max_workers=max_parallel)
         
@@ -252,6 +261,14 @@ class WorkflowOrchestrator:
         
         self.logger.info(f"{'='*70}")
         
+        # Start experiment run if tracking enabled
+        if self.experiment_tracker:
+            self.experiment_tracker.start_run(
+                run_name=f"{self.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                workflow_name=self.name
+            )
+            logger.info("Started experiment run")
+        
         workflow_start = time.time()
         
         try:
@@ -288,7 +305,7 @@ class WorkflowOrchestrator:
 
                 # Choose executor
                 if parallel and len(sorted_tasks) > 1:
-                    if isinstance(self.executor, ParallelExecutor):
+                    if isinstance(self.executor, ParallelExecutor) or isinstance(self.executor, DaskExecutor):
                         self.executor.execute_tasks(
                             sorted_tasks, self.context,
                             self._check_dependencies, self._check_condition,
@@ -324,6 +341,12 @@ class WorkflowOrchestrator:
             self._print_summary()
             self._save_execution_history(workflow_time)
             
+            # End experiment run successfully
+            if self.experiment_tracker:
+                self.experiment_tracker.log_metric("workflow_duration", workflow_time)
+                self.experiment_tracker.end_run(status="completed")
+                logger.info("Experiment run completed successfully")
+            
             # Final state update
             self.state_manager.update_state(self.name, self.tasks, self.results)
             self.logger.info("✓ Final state written to workflow_state.json")
@@ -333,6 +356,12 @@ class WorkflowOrchestrator:
             import traceback
             self.logger.debug(traceback.format_exc())
             self._print_summary()
+            
+            # End experiment run with failure
+            if self.experiment_tracker:
+                self.experiment_tracker.end_run(status="failed")
+                logger.info("Experiment run marked as failed")
+            
             self.state_manager.update_state(self.name, self.tasks, self.results)
             raise
         finally:
