@@ -38,93 +38,140 @@ st.set_page_config(
 # ----------------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap');
     
-    /* Global Styles */
+    /* Core App Framework */
     .stApp {
-        background-color: #f8fafc; /* Slate 50 */
+        background-color: #0d1117; /* GitHub Deep Space Dark */
+        color: #e6edf3;
     }
     
     h1, h2, h3, p, div, span {
-        font-family: 'Inter', sans-serif;
-        color: #0f172a; /* Slate 900 */
+        font-family: 'Outfit', sans-serif;
     }
 
-    /* Header */
+    /* Top Navigation Bar */
     .header-container {
-        background-color: #ffffff;
+        background: linear-gradient(180deg, rgba(22, 27, 34, 0.95) 0%, rgba(13, 17, 23, 0.95) 100%);
         padding: 1rem 2rem;
-        border-bottom: 1px solid #e2e8f0;
-        margin: -6rem -4rem 2rem -4rem; /* Negative margin to span full width */
+        border-bottom: 1px solid #30363d;
+        margin: -6rem -4rem 2rem -4rem; 
         display: flex;
         align-items: center;
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
     }
     
     .brand-title {
-        font-size: 1.25rem;
+        font-size: 1.4rem;
         font-weight: 600;
-        color: #0f172a;
-        margin-right: 1rem;
+        background: linear-gradient(90deg, #2dd4bf 0%, #3b82f6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-right: 1.2rem;
+        letter-spacing: -0.02em;
     }
     
     .brand-subtitle {
-        font-size: 0.875rem;
-        color: #64748b;
+        font-size: 0.9rem;
+        color: #8b949e;
         font-weight: 400;
-        border-left: 1px solid #cbd5e1;
-        padding-left: 1rem;
+        border-left: 1px solid #30363d;
+        padding-left: 1.2rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
     }
 
-    /* Metric Cards */
+    /* Metric Cards - Glassmorphism */
     .metric-container {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+        background: rgba(22, 27, 34, 0.6);
+        border: 1px solid #30363d;
+        border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .metric-container:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+        border-color: #4b5563;
+    }
+    
+    .metric-item {
+        margin-bottom: 1.5rem;
+    }
+    .metric-item:last-child {
+        margin-bottom: 0;
     }
     
     .metric-label {
-        font-size: 0.875rem;
+        font-size: 0.75rem;
         font-weight: 500;
-        color: #64748b; /* Slate 500 */
-        margin-bottom: 0.5rem;
+        color: #8b949e; 
+        margin-bottom: 0.3rem;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
     }
     
     .metric-value {
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: 600;
-        color: #0f172a;
-        line-height: 1;
+        color: #e6edf3;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
     }
-
-    /* Tables */
+    
+    /* Neon Data Tables */
     [data-testid="stDataFrame"] {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+        background: rgba(22, 27, 34, 0.6);
+        border: 1px solid #30363d;
+        border-radius: 12px;
         padding: 1rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    [data-testid="stDataFrame"] table {
+        color: #c9d1d9 !important;
+    }
+    [data-testid="stDataFrame"] th {
+        background-color: transparent !important;
+        border-bottom: 1px solid #30363d !important;
+        color: #8b949e !important;
+        font-family: 'Outfit', sans-serif !important;
+        font-weight: 500 !important;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+    }
+    [data-testid="stDataFrame"] td {
+        border-bottom: 1px solid rgba(48, 54, 61, 0.5) !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 0.85rem;
     }
 
-    /* Logs */
+    /* Terminal/Logs */
     .log-viewer {
-        font-family: 'Roboto Mono', monospace;
-        font-size: 0.85rem;
-        background-color: #1e293b; /* Slate 800 */
-        color: #f8fafc; /* Slate 50 */
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.8rem;
+        background-color: #010409; 
+        color: #a5d6ff; 
         padding: 1.5rem;
-        border-radius: 8px;
+        border-radius: 12px;
+        border: 1px solid #30363d;
         height: 400px;
         overflow-y: auto;
         white-space: pre-wrap;
-        line-height: 1.5;
+        line-height: 1.6;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
     }
 
-    /* Hide Streamlit Elements */
+    /* Hide Streamlit branding */
     #MainMenu, footer, header {visibility: hidden;}
+
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background-color: #161b22;
+        border-right: 1px solid #30363d;
+    }
     
 </style>
 """, unsafe_allow_html=True)
@@ -233,13 +280,18 @@ def load_state_from_db(run_id=None):
 
 def get_status_color(status):
     return {
-        "running": "#3b82f6",   # Blue
-        "completed": "#10b981", # Emerald
-        "failed": "#ef4444",    # Red
-        "pending": "#cbd5e1",   # Slate 300
-        "skipped": "#94a3b8",   # Slate 400
-        "timeout": "#f59e0b"    # Amber
-    }.get(status, "#cbd5e1")
+        "running": "#00f2fe",   # Neon Cyan
+        "completed": "#34d399", # Neon Emerald
+        "failed": "#fb7185",    # Neon Rose/Red
+        "pending": "#30363d",   # Dark Slate Border
+        "skipped": "#9ca3af",   # Gray
+        "timeout": "#fbbf24"    # Neon Amber
+    }.get(status, "#30363d")
+
+def get_status_font_color(status):
+    if status in ["pending", "skipped"]:
+        return "#8b949e"
+    return "#ffffff"
 
 # ----------------------------------
 # Layout & Components
@@ -276,21 +328,21 @@ def dashboard(selected_run_id):
         with col_metrics:
             st.markdown(f"""
                 <div class="metric-container">
-                    <div style="margin-bottom: 1.5rem;">
+                    <div class="metric-item">
                         <div class="metric-label">Total Tasks</div>
                         <div class="metric-value">{total}</div>
                     </div>
-                    <div style="margin-bottom: 1.5rem;">
+                    <div class="metric-item">
                         <div class="metric-label">Running</div>
-                        <div class="metric-value" style="color: #3b82f6;">{running}</div>
+                        <div class="metric-value" style="color: #00f2fe; text-shadow: 0 0 10px rgba(0, 242, 254, 0.4);">{running}</div>
                     </div>
-                    <div style="margin-bottom: 1.5rem;">
+                    <div class="metric-item">
                         <div class="metric-label">Completed</div>
-                        <div class="metric-value" style="color: #10b981;">{completed}</div>
+                        <div class="metric-value" style="color: #34d399; text-shadow: 0 0 10px rgba(52, 211, 153, 0.4);">{completed}</div>
                     </div>
-                    <div>
+                    <div class="metric-item">
                         <div class="metric-label">Failed</div>
-                        <div class="metric-value" style="color: #ef4444;">{failed}</div>
+                        <div class="metric-value" style="color: #fb7185; text-shadow: 0 0 10px rgba(251, 113, 133, 0.4);">{failed}</div>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -320,37 +372,48 @@ def dashboard(selected_run_id):
             for name in tasks.keys():
                 status = results.get(name, {}).get("status", "pending")
                 color = get_status_color(status)
+                font_color = get_status_font_color(status)
+                
+                # Neon Glow Effect parameters for Agraph
+                shadow = None
+                if status in ["running", "completed", "failed"]:
+                    shadow = {'enabled': True, 'color': color, 'size': 15, 'x': 0, 'y': 0}
                 
                 nodes.append(Node(
                     id=name,
                     label=name.replace("_", "\n"),
-                    size=400,
-                    color=color,
-                    font={'color': 'white', 'face': 'Inter', 'size': 14},
+                    size=30,
+                    color={'background': '#0d1117', 'border': color, 'highlight': {'border': color, 'background': '#161b22'}},
+                    font={'color': font_color, 'face': 'Outfit', 'size': 15, 'weight': '500'},
                     shape='box',
-                    shapeProperties={'borderRadius': 4},
-                    borderWidth=0
+                    shapeProperties={'borderRadius': 8},
+                    borderWidth=2,
+                    borderWidthSelected=3,
+                    shadow=shadow
                 ))
                 
                 for dep in tasks[name].get("depends_on", []):
                     edges.append(Edge(
                         source=dep, 
                         target=name,
-                        color='#cbd5e1',
+                        color={'color': '#4b5563', 'highlight': '#8b949e'},
                         width=2,
-                        type='curvedCW'
+                        type='smooth',
+                        smooth={'type': 'cubicBezier', 'forceDirection': 'vertical', 'roundness': 0.6}
                     ))
             
             config = Config(
-                height=500,
+                height=550,
                 width="100%",
                 directed=True,
                 physics=False,
                 hierarchical=True,
                 dagMode='TB',
-                dagLevelDistance=80,
+                dagLevelDistance=100,
+                nodeSpacing=150,
                 staticGraph=True,
-                interaction={'dragNodes': False, 'dragView': False, 'zoomView': False}
+                interaction={'dragNodes': False, 'dragView': True, 'zoomView': True},
+                backgroundColor='#0d1117'
             )
             
             if nodes:
