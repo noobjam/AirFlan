@@ -40,10 +40,10 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap');
     
-    /* Core App Framework */
+    /* Core App Framework - Light Mode Minimalist */
     .stApp {
-        background-color: #0d1117; /* GitHub Deep Space Dark */
-        color: #e6edf3;
+        background-color: #f8fafc; /* Slate 50 */
+        color: #0f172a;
     }
     
     h1, h2, h3, p, div, span {
@@ -54,7 +54,7 @@ st.markdown("""
     .header-container {
         background: transparent;
         padding: 1rem 0rem;
-        border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+        border-bottom: 1px solid #e2e8f0;
         margin: -4rem 0rem 2rem 0rem; 
         display: flex;
         align-items: center;
@@ -63,32 +63,29 @@ st.markdown("""
     .brand-title {
         font-size: 1.4rem;
         font-weight: 600;
-        background: linear-gradient(90deg, #2dd4bf 0%, #3b82f6 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #0f172a;
         margin-right: 1.2rem;
         letter-spacing: -0.02em;
     }
     
     .brand-subtitle {
         font-size: 0.9rem;
-        color: #8b949e;
+        color: #64748b;
         font-weight: 400;
-        border-left: 1px solid #30363d;
+        border-left: 1px solid #e2e8f0;
         padding-left: 1.2rem;
         letter-spacing: 0.05em;
         text-transform: uppercase;
     }
 
-    /* Metric Cards - Glassmorphism */
+    /* Metric Cards - Minimalist Soft Shadow */
     .metric-container {
-        background: rgba(22, 27, 34, 0.4);
-        border: 1px solid rgba(48, 54, 61, 0.6);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
         padding: 1.5rem;
-        backdrop-filter: blur(12px);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        transition: transform 0.2s ease, border-color 0.2s ease;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         height: 100%;
         display: flex;
         flex-direction: column;
@@ -96,7 +93,8 @@ st.markdown("""
     }
     .metric-container:hover {
         transform: translateY(-2px);
-        border-color: rgba(45, 212, 191, 0.5); /* Teal hover */
+        border-color: #cbd5e1; 
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
     }
     
     .metric-item {
@@ -109,7 +107,7 @@ st.markdown("""
     .metric-label {
         font-size: 0.75rem;
         font-weight: 500;
-        color: #8b949e; 
+        color: #64748b; 
         margin-bottom: 0.3rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
@@ -118,26 +116,26 @@ st.markdown("""
     .metric-value {
         font-size: 2.2rem;
         font-weight: 600;
-        color: #e6edf3;
+        color: #0f172a;
         line-height: 1.1;
         letter-spacing: -0.02em;
     }
     
-    /* Neon Data Tables */
+    /* Clean Data Tables */
     [data-testid="stDataFrame"] {
-        background: rgba(22, 27, 34, 0.4);
-        border: 1px solid rgba(48, 54, 61, 0.6);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
         padding: 0.5rem;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
     [data-testid="stDataFrame"] table {
-        color: #c9d1d9 !important;
+        color: #334155 !important;
     }
     [data-testid="stDataFrame"] th {
         background-color: transparent !important;
-        border-bottom: 1px solid rgba(48, 54, 61, 0.8) !important;
-        color: #8b949e !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        color: #64748b !important;
         font-family: 'Outfit', sans-serif !important;
         font-weight: 500 !important;
         text-transform: uppercase;
@@ -145,7 +143,7 @@ st.markdown("""
         letter-spacing: 0.05em;
     }
     [data-testid="stDataFrame"] td {
-        border-bottom: 1px solid rgba(48, 54, 61, 0.3) !important;
+        border-bottom: 1px solid #f1f5f9 !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 0.9rem;
     }
@@ -154,16 +152,16 @@ st.markdown("""
     .log-viewer {
         font-family: 'JetBrains Mono', monospace;
         font-size: 0.8rem;
-        background-color: #010409; 
-        color: #a5d6ff; 
+        background-color: #f8fafc; 
+        color: #334155; 
         padding: 1.5rem;
         border-radius: 12px;
-        border: 1px solid #30363d;
+        border: 1px solid #e2e8f0;
         height: 400px;
         overflow-y: auto;
         white-space: pre-wrap;
         line-height: 1.6;
-        box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
     }
 
     /* Hide Streamlit branding */
@@ -171,8 +169,8 @@ st.markdown("""
 
     /* Sidebar Styling */
     [data-testid="stSidebar"] {
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
     }
     
 </style>
@@ -268,11 +266,16 @@ def load_state_from_db(run_id=None):
         
         # Fallback to merge dependencies from JSON if available and matches dag_id
         # (This is a temporary hack until Dag structure is serialized in Phase 6)
-        json_state = load_state_safe()
-        if json_state and json_state.get('name') == target_run.dag_id:
-            for t_id, data in json_state.get('tasks', {}).items():
-                if t_id in state["tasks"]:
-                    state["tasks"][t_id]["depends_on"] = data.get("depends_on", [])
+        try:
+            struct_file = f"{target_run.dag_id}_structure.json"
+            if Path(struct_file).exists():
+                with open(struct_file, 'r') as f:
+                    json_state = json.load(f)
+                for t_id, data in json_state.get('tasks', {}).items():
+                    if t_id in state["tasks"]:
+                        state["tasks"][t_id]["depends_on"] = data.get("depends_on", [])
+        except:
+            pass
                     
         return state
     except Exception as e:
@@ -284,18 +287,16 @@ def load_state_from_db(run_id=None):
 
 def get_status_color(status):
     return {
-        "running": "#00f2fe",   # Neon Cyan
-        "completed": "#34d399", # Neon Emerald
-        "failed": "#fb7185",    # Neon Rose/Red
-        "pending": "#30363d",   # Dark Slate Border
-        "skipped": "#9ca3af",   # Gray
-        "timeout": "#fbbf24"    # Neon Amber
-    }.get(status, "#30363d")
+        "running": "#3b82f6",   # Blue
+        "completed": "#10b981", # Emerald
+        "failed": "#f43f5e",    # Rose
+        "pending": "#cbd5e1",   # Slate 300
+        "skipped": "#94a3b8",   # Slate 400
+        "timeout": "#f59e0b"    # Amber
+    }.get(status, "#cbd5e1")
 
 def get_status_font_color(status):
-    if status in ["pending", "skipped"]:
-        return "#8b949e"
-    return "#ffffff"
+    return "#0f172a"
 
 # ----------------------------------
 # Layout & Components
@@ -346,7 +347,7 @@ def dashboard(selected_run_id):
             pass
     
     # --- Top Row: DAG Visualization ---
-    st.markdown("<h3 style='margin-bottom: -1rem;'>DAG Visualization</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='margin-bottom: -1rem; color: #0f172a;'>DAG Visualization</h3>", unsafe_allow_html=True)
     
     # We want the Agraph to take full width up top like Prefect
     nodes = []
@@ -357,18 +358,19 @@ def dashboard(selected_run_id):
         color = get_status_color(status)
         font_color = get_status_font_color(status)
         
+        # Subtle shadow for active states
         shadow = None
-        if status in ["running", "completed", "failed"]:
-            shadow = {'enabled': True, 'color': color, 'size': 15, 'x': 0, 'y': 0}
+        if status in ["running", "failed"]:
+            shadow = {'enabled': True, 'color': 'rgba(0,0,0,0.1)', 'size': 10, 'x': 0, 'y': 4}
         
         nodes.append(Node(
             id=name,
             label=name.replace("_", "\n"),
             size=30,
-            color={'background': '#0d1117', 'border': color, 'highlight': {'border': color, 'background': '#161b22'}},
+            color={'background': '#ffffff', 'border': color, 'highlight': {'border': color, 'background': '#f8fafc'}},
             font={'color': font_color, 'face': 'Outfit', 'size': 14, 'weight': '500'},
             shape='box',
-            shapeProperties={'borderRadius': 8},
+            shapeProperties={'borderRadius': 6},
             borderWidth=2,
             borderWidthSelected=3,
             shadow=shadow
@@ -378,8 +380,9 @@ def dashboard(selected_run_id):
             edges.append(Edge(
                 source=dep, 
                 target=name,
-                color={'color': '#4b5563', 'highlight': '#8b949e'},
+                color={'color': '#94a3b8', 'highlight': '#475569'},
                 width=2,
+                arrows='to',
                 type='smooth',
                 smooth={'type': 'cubicBezier', 'forceDirection': 'horizontal', 'roundness': 0.6}
             ))
@@ -418,7 +421,7 @@ def dashboard(selected_run_id):
         st.markdown(f"""
             <div class="metric-container">
                 <div class="metric-label">Running</div>
-                <div class="metric-value" style="color: #00f2fe; text-shadow: 0 0 10px rgba(0, 242, 254, 0.4);">{running}</div>
+                <div class="metric-value" style="color: #3b82f6;">{running}</div>
             </div>
         """, unsafe_allow_html=True)
         
@@ -426,7 +429,7 @@ def dashboard(selected_run_id):
         st.markdown(f"""
             <div class="metric-container">
                 <div class="metric-label">Success</div>
-                <div class="metric-value" style="color: #34d399; text-shadow: 0 0 10px rgba(52, 211, 153, 0.4);">{completed}</div>
+                <div class="metric-value" style="color: #10b981;">{completed}</div>
             </div>
         """, unsafe_allow_html=True)
         
@@ -434,7 +437,7 @@ def dashboard(selected_run_id):
         st.markdown(f"""
             <div class="metric-container">
                 <div class="metric-label">Failed Runs</div>
-                <div class="metric-value" style="color: #fb7185; text-shadow: 0 0 10px rgba(251, 113, 133, 0.4);">{failed}</div>
+                <div class="metric-value" style="color: #f43f5e;">{failed}</div>
             </div>
         """, unsafe_allow_html=True)
         
@@ -442,7 +445,7 @@ def dashboard(selected_run_id):
         st.markdown(f"""
             <div class="metric-container">
                 <div class="metric-label">Run Time</div>
-                <div class="metric-value" style="color: #c9d1d9;">{duration_str}</div>
+                <div class="metric-value" style="color: #64748b;">{duration_str}</div>
             </div>
         """, unsafe_allow_html=True)
 
