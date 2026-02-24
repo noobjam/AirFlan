@@ -4,9 +4,10 @@ from typing import Optional
 
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, 
-    create_engine, Engine
+    create_engine, Engine, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.pool import NullPool
 
 Base = declarative_base()
 
@@ -24,6 +25,7 @@ class DagRun(Base):
 class TaskInstance(Base):
     """Tracks a single execution of a specific task within a DagRun"""
     __tablename__ = 'task_instances'
+    __table_args__ = (UniqueConstraint('run_id', 'task_id', name='_run_task_uc'),)
     
     id = Column(Integer, primary_key=True)
     task_id = Column(String(250), nullable=False)
@@ -73,7 +75,7 @@ class DatabaseSession:
             # Enable multithreading and high timeouts for SQLite to prevent 'database locked'
             connect_args = {'check_same_thread': False, 'timeout': 15}
             
-        self.engine: Engine = create_engine(db_url, echo=False, connect_args=connect_args)
+        self.engine: Engine = create_engine(db_url, echo=False, connect_args=connect_args, poolclass=NullPool)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         
     def init_db(self):

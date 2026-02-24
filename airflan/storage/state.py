@@ -1,10 +1,12 @@
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
 from loguru import logger
 from sqlalchemy.orm import Session
+from sqlalchemy import exc
 
 from ..core.task import Task, TaskResult
 from .backend import DatabaseSession, DagRun, TaskInstance
@@ -27,6 +29,7 @@ class StateManager:
         self.db = DatabaseSession(db_url)
         self.db.init_db()
         self.run_id = None
+        self._lock = threading.Lock()
         
     def start_run(self, workflow_name: str, run_id: str) -> None:
         """Initialize a new DAG run in the database"""
@@ -67,53 +70,72 @@ class StateManager:
             logger.warning("Attempted to update state before start_run()")
             return
             
-        session = self.db.get_session()
-        try:
-            # Check if workflow is finished
-            is_finished = len(results) == len(tasks) and all(r.status.value in ['completed', 'failed', 'skipped'] for r in results.values())
-            has_failures = any(r.status.value == 'failed' for r in results.values())
-            
-            # Update DagRun terminal status
-            if is_finished:
-                dag_run = session.query(DagRun).filter_by(run_id=self.run_id).first()
-                if dag_run:
-                    dag_run.status = "failed" if has_failures else "completed"
-                    dag_run.end_time = datetime.utcnow()
-            
-            # Upsert TaskInstance statuses
-            for name, task in tasks.items():
-                ti = session.query(TaskInstance).filter_by(
-                    run_id=self.run_id, task_id=name
-                ).first()
+        with self._lock:
+            session = self.db.get_session()
+            try:
+                # Check if workflow is finished
+                is_finished = len(results) == len(tasks) and all(r.status.value in ['completed', 'failed', 'skipped'] for r in results.values())
+                has_failures = any(r.status.value == 'failed' for r in results.values())
                 
-                if not ti:
-                    ti = TaskInstance(
-                        task_id=name,
-                        dag_id=workflow_name,
-                        run_id=self.run_id
-                    )
-                    session.add(ti)
+                # Update DagRun terminal status
+                if is_finished:
+                    dag_run = session.query(DagRun).filter_by(run_id=self.run_id).first()
+                    if dag_run:
+                        dag_run.status = "failed" if has_failures else "completed"
+                        dag_run.end_time = datetime.utcnow()
                 
-                if name in results:
-                    result = results[name]
-                    ti.status = result.status.value
-                    ti.execution_time = result.execution_time
-                    ti.attempt_count = result.attempt_count
+                # Upsert TaskInstance statuses
+                for name, task in tasks.items():
+                    ti = session.query(TaskInstance).filter_by(
+                        run_id=self.run_id, task_id=name
+                    ).order_by(TaskInstance.id.desc()).first()
                     
-                    if result.error_trace:
-                        ti.error_trace = result.error_trace
+                    if not ti:
+                        ti = TaskInstance(
+                            task_id=name,
+                            dag_id=workflow_name,
+                            run_id=self.run_id
+                        )
+                        session.add(ti)
+                    
+                    if name in results:
+                        result = results[name]
+                        ti.status = result.status.value
+                        ti.execution_time = result.execution_time
+                        ti.attempt_count = result.attempt_count
                         
-                    if result.status.value in ['completed', 'failed', 'skipped'] and not ti.end_time:
-                        ti.end_time = datetime.utcnow()
-                        
-            session.commit()
-            
-        except Exception as e:
-            session.rollback()
-            import traceback
-            logger.error(f"Failed to update state in DB: {e}\n{traceback.format_exc()}")
-        finally:
-            session.close()
+                        if result.error_trace:
+                            ti.error_trace = result.error_trace
+                            
+                        if result.status.value in ['completed', 'failed', 'skipped'] and not ti.end_time:
+                            ti.end_time = datetime.utcnow()
+                            
+                session.commit()
+                
+                # Write fallback JSON state for UI to parse 'depends_on' edges
+                try:
+                    state_dict = {
+                        "name": workflow_name,
+                        "status": "completed" if is_finished and not has_failures else "failed" if is_finished else "running",
+                        "tasks": {
+                            name: {"depends_on": task.depends_on} 
+                            for name, task in tasks.items()
+                        }
+                    }
+                    with open(f"{workflow_name}_structure.json", "w") as f:
+                        json.dump(state_dict, f)
+                except Exception as json_e:
+                    logger.warning(f"Failed to write UI json state fallback: {json_e}")
+                
+            except exc.OperationalError as oe:
+                session.rollback()
+                logger.warning(f"DB lock delay - retrying update state next loop.")
+            except Exception as e:
+                session.rollback()
+                import traceback
+                logger.error(f"Failed to update state in DB: {e}\n{traceback.format_exc()}")
+            finally:
+                session.close()
             
     def load_state(self) -> Optional[Dict]:
         """
