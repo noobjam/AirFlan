@@ -52,14 +52,12 @@ st.markdown("""
 
     /* Top Navigation Bar */
     .header-container {
-        background: linear-gradient(180deg, rgba(22, 27, 34, 0.95) 0%, rgba(13, 17, 23, 0.95) 100%);
-        padding: 1rem 2rem;
-        border-bottom: 1px solid #30363d;
-        margin: -6rem -4rem 2rem -4rem; 
+        background: transparent;
+        padding: 1rem 0rem;
+        border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+        margin: -4rem 0rem 2rem 0rem; 
         display: flex;
         align-items: center;
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
     }
     
     .brand-title {
@@ -84,18 +82,21 @@ st.markdown("""
 
     /* Metric Cards - Glassmorphism */
     .metric-container {
-        background: rgba(22, 27, 34, 0.6);
-        border: 1px solid #30363d;
+        background: rgba(22, 27, 34, 0.4);
+        border: 1px solid rgba(48, 54, 61, 0.6);
         border-radius: 12px;
         padding: 1.5rem;
         backdrop-filter: blur(12px);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.05);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s ease, border-color 0.2s ease;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
     .metric-container:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-        border-color: #4b5563;
+        border-color: rgba(45, 212, 191, 0.5); /* Teal hover */
     }
     
     .metric-item {
@@ -124,28 +125,29 @@ st.markdown("""
     
     /* Neon Data Tables */
     [data-testid="stDataFrame"] {
-        background: rgba(22, 27, 34, 0.6);
-        border: 1px solid #30363d;
+        background: rgba(22, 27, 34, 0.4);
+        border: 1px solid rgba(48, 54, 61, 0.6);
         border-radius: 12px;
-        padding: 1rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        padding: 0.5rem;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
     }
     [data-testid="stDataFrame"] table {
         color: #c9d1d9 !important;
     }
     [data-testid="stDataFrame"] th {
         background-color: transparent !important;
-        border-bottom: 1px solid #30363d !important;
+        border-bottom: 1px solid rgba(48, 54, 61, 0.8) !important;
         color: #8b949e !important;
         font-family: 'Outfit', sans-serif !important;
         font-weight: 500 !important;
         text-transform: uppercase;
         font-size: 0.75rem;
+        letter-spacing: 0.05em;
     }
     [data-testid="stDataFrame"] td {
-        border-bottom: 1px solid rgba(48, 54, 61, 0.5) !important;
+        border-bottom: 1px solid rgba(48, 54, 61, 0.3) !important;
         font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
     }
 
     /* Terminal/Logs */
@@ -313,115 +315,131 @@ def dashboard(selected_run_id):
     state = load_state_from_db(selected_run_id) or load_state_safe()
     logs = load_logs_safe()
     
-    col_metrics, col_graph = st.columns([1, 3])
+    if not state:
+        st.info("No workflow runs found. Waiting for tasks...")
+        return
+        
+    results = state.get("results", {})
+    tasks = state.get("tasks", {})
     
-    if state:
-        results = state.get("results", {})
-        tasks = state.get("tasks", {})
+    total = len(tasks)
+    completed = sum(1 for r in results.values() if r["status"] == "completed")
+    failed = sum(1 for r in results.values() if r["status"] == "failed")
+    running = sum(1 for r in results.values() if r["status"] == "running")
+    
+    # --- Top Row: DAG Visualization ---
+    st.markdown("<h3 style='margin-bottom: -1rem;'>DAG Visualization</h3>", unsafe_allow_html=True)
+    
+    # We want the Agraph to take full width up top like Prefect
+    nodes = []
+    edges = []
+    
+    for name in tasks.keys():
+        status = results.get(name, {}).get("status", "pending")
+        color = get_status_color(status)
+        font_color = get_status_font_color(status)
         
-        # 1. Metrics Panel
-        total = len(tasks)
-        completed = sum(1 for r in results.values() if r["status"] == "completed")
-        failed = sum(1 for r in results.values() if r["status"] == "failed")
-        running = sum(1 for r in results.values() if r["status"] == "running")
+        shadow = None
+        if status in ["running", "completed", "failed"]:
+            shadow = {'enabled': True, 'color': color, 'size': 15, 'x': 0, 'y': 0}
         
-        with col_metrics:
-            st.markdown(f"""
-                <div class="metric-container">
-                    <div class="metric-item">
-                        <div class="metric-label">Total Tasks</div>
-                        <div class="metric-value">{total}</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Running</div>
-                        <div class="metric-value" style="color: #00f2fe; text-shadow: 0 0 10px rgba(0, 242, 254, 0.4);">{running}</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Completed</div>
-                        <div class="metric-value" style="color: #34d399; text-shadow: 0 0 10px rgba(52, 211, 153, 0.4);">{completed}</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Failed</div>
-                        <div class="metric-value" style="color: #fb7185; text-shadow: 0 0 10px rgba(251, 113, 133, 0.4);">{failed}</div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
+        nodes.append(Node(
+            id=name,
+            label=name.replace("_", "\n"),
+            size=30,
+            color={'background': '#0d1117', 'border': color, 'highlight': {'border': color, 'background': '#161b22'}},
+            font={'color': font_color, 'face': 'Outfit', 'size': 14, 'weight': '500'},
+            shape='box',
+            shapeProperties={'borderRadius': 8},
+            borderWidth=2,
+            borderWidthSelected=3,
+            shadow=shadow
+        ))
+        
+        for dep in tasks[name].get("depends_on", []):
+            edges.append(Edge(
+                source=dep, 
+                target=name,
+                color={'color': '#4b5563', 'highlight': '#8b949e'},
+                width=2,
+                type='smooth',
+                smooth={'type': 'cubicBezier', 'forceDirection': 'horizontal', 'roundness': 0.6}
+            ))
+    
+    config = Config(
+        height=400,
+        width="100%",
+        directed=True,
+        physics=False,
+        hierarchical=True,
+        dagMode='LR',  # Left-to-Right like Prefect
+        dagLevelDistance=160,
+        nodeSpacing=100,
+        staticGraph=False, # Allow dragging and zoom
+        interaction={'dragNodes': False, 'dragView': True, 'zoomView': True},
+        backgroundColor='transparent'
+    )
+    
+    if nodes:
+        agraph(nodes=nodes, edges=edges, config=config)
+    
+    st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
+    
+    # --- Bottom Row: Metrics & Data ---
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">Active Flows</div>
+                <div class="metric-value">{total}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+    with col2:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">Running</div>
+                <div class="metric-value" style="color: #00f2fe; text-shadow: 0 0 10px rgba(0, 242, 254, 0.4);">{running}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+    with col3:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">Success</div>
+                <div class="metric-value" style="color: #34d399; text-shadow: 0 0 10px rgba(52, 211, 153, 0.4);">{completed}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+    with col4:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">Failed Runs</div>
+                <div class="metric-value" style="color: #fb7185; text-shadow: 0 0 10px rgba(251, 113, 133, 0.4);">{failed}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
-            st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
-            
+    st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
+    
+    # --- Tables & Logs Row ---
+    if results or (logs and logs.strip()):
+        col_t, col_l = st.columns([1, 1])
+        
+        with col_t:
             if results:
                 data = []
                 for name, res in results.items():
                     data.append({
                         "Task": name,
                         "Status": res["status"].upper(),
-                        "Time": f"{res.get('execution_time') or 0:.2f}s"
+                        "Dur": f"{res.get('execution_time') or 0:.1f}s"
                     })
-                st.dataframe(
-                    data, 
-                    use_container_width=True,
-                    hide_index=True,
-                    height=400
-                )
-
-        # 3. Graph Visualization & Logs
-        with col_graph:
-            nodes = []
-            edges = []
-            
-            for name in tasks.keys():
-                status = results.get(name, {}).get("status", "pending")
-                color = get_status_color(status)
-                font_color = get_status_font_color(status)
+                st.dataframe(data, use_container_width=True, hide_index=True, height=300)
                 
-                # Neon Glow Effect parameters for Agraph
-                shadow = None
-                if status in ["running", "completed", "failed"]:
-                    shadow = {'enabled': True, 'color': color, 'size': 15, 'x': 0, 'y': 0}
-                
-                nodes.append(Node(
-                    id=name,
-                    label=name.replace("_", "\n"),
-                    size=30,
-                    color={'background': '#0d1117', 'border': color, 'highlight': {'border': color, 'background': '#161b22'}},
-                    font={'color': font_color, 'face': 'Outfit', 'size': 15, 'weight': '500'},
-                    shape='box',
-                    shapeProperties={'borderRadius': 8},
-                    borderWidth=2,
-                    borderWidthSelected=3,
-                    shadow=shadow
-                ))
-                
-                for dep in tasks[name].get("depends_on", []):
-                    edges.append(Edge(
-                        source=dep, 
-                        target=name,
-                        color={'color': '#4b5563', 'highlight': '#8b949e'},
-                        width=2,
-                        type='smooth',
-                        smooth={'type': 'cubicBezier', 'forceDirection': 'vertical', 'roundness': 0.6}
-                    ))
-            
-            config = Config(
-                height=550,
-                width="100%",
-                directed=True,
-                physics=False,
-                hierarchical=True,
-                dagMode='TB',
-                dagLevelDistance=100,
-                nodeSpacing=150,
-                staticGraph=True,
-                interaction={'dragNodes': False, 'dragView': True, 'zoomView': True},
-                backgroundColor='#0d1117'
-            )
-            
-            if nodes:
-                # Removed 'key' argument to fix TypeError
-                agraph(nodes=nodes, edges=edges, config=config)
-
-            st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
-            st.markdown(f'<div class="log-viewer">{logs}</div>', unsafe_allow_html=True)
+        with col_l:
+            if logs and logs.strip():
+                st.markdown(f'<div class="log-viewer" style="height: 300px;">{logs}</div>', unsafe_allow_html=True)
 
 # Run Dashboard
 runs = get_all_runs()
