@@ -174,25 +174,38 @@ def load_logs_safe():
     except Exception:
         return "Error reading logs"
 
-def load_state_from_db():
+def get_all_runs():
+    """Get list of past DAG Runs for the sidebar"""
+    db = DatabaseSession()
+    session = db.get_session()
+    try:
+        runs = session.query(DagRun).order_by(DagRun.start_time.desc()).limit(50).all()
+        return [(r.run_id, f"{r.dag_id} ({r.start_time.strftime('%m-%d %H:%M:%S')}) - {r.status.upper()}") for r in runs]
+    except Exception:
+        return []
+    finally:
+        session.close()
+
+def load_state_from_db(run_id=None):
     """Load latest workflow state directly from SQLite Database"""
     db = DatabaseSession()
     session = db.get_session()
     
     try:
-        latest_run = session.query(DagRun).order_by(DagRun.start_time.desc()).first()
-        if not latest_run:
+        if run_id:
+            target_run = session.query(DagRun).filter_by(run_id=run_id).first()
+        else:
+            target_run = session.query(DagRun).order_by(DagRun.start_time.desc()).first()
+            
+        if not target_run:
             return None
             
-        tasks = session.query(TaskInstance).filter_by(run_id=latest_run.run_id).all()
+        tasks = session.query(TaskInstance).filter_by(run_id=target_run.run_id).all()
         
         # Build state dict expected by the UI graph 
-        # Since we don't store task dependencies in the DB directly right now,
-        # we still require finding out the edges. If we can't find dependencies in DB,
-        # we will render tasks without edges until we implement DB schema for edges.
         state = {
-            "name": latest_run.dag_id,
-            "status": latest_run.status,
+            "name": target_run.dag_id,
+            "status": target_run.status,
             "tasks": {t.task_id: {"depends_on": []} for t in tasks},
             "results": {
                 t.task_id: {
@@ -205,7 +218,7 @@ def load_state_from_db():
         # Fallback to merge dependencies from JSON if available and matches dag_id
         # (This is a temporary hack until Dag structure is serialized in Phase 6)
         json_state = load_state_safe()
-        if json_state and json_state.get('name') == latest_run.dag_id:
+        if json_state and json_state.get('name') == target_run.dag_id:
             for t_id, data in json_state.get('tasks', {}).items():
                 if t_id in state["tasks"]:
                     state["tasks"][t_id]["depends_on"] = data.get("depends_on", [])
@@ -245,7 +258,16 @@ st.markdown("""
 # ----------------------------------
 @st.fragment(run_every=2)
 def dashboard():
-    state = load_state_from_db() or load_state_safe()
+    runs = get_all_runs()
+    selected_run_id = None
+    
+    if runs:
+        st.sidebar.markdown("### Historical Runs")
+        run_options = {r[1]: r[0] for r in runs}
+        selected_label = st.sidebar.selectbox("Select Run", list(run_options.keys()))
+        selected_run_id = run_options[selected_label]
+        
+    state = load_state_from_db(selected_run_id) or load_state_safe()
     logs = load_logs_safe()
     
     col_metrics, col_graph = st.columns([1, 3])

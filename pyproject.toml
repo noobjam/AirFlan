@@ -22,7 +22,14 @@ dependencies = [
     "streamlit-agraph>=0.0.45",
     "plotly>=5.18.0",
     "networkx>=3.0",
+    "click",
+    "dask[distributed]",
+    "sqlalchemy",
+    "croniter",
 ]
+
+[project.scripts]
+airflan = "airflan.cli:cli"
 
 [project.urls]
 "Homepage" = "https://github.com/noobjam/airflan"
