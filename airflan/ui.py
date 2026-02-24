@@ -257,16 +257,7 @@ st.markdown("""
 # Main Dashboard (Fragment)
 # ----------------------------------
 @st.fragment(run_every=2)
-def dashboard():
-    runs = get_all_runs()
-    selected_run_id = None
-    
-    if runs:
-        st.sidebar.markdown("### Historical Runs")
-        run_options = {r[1]: r[0] for r in runs}
-        selected_label = st.sidebar.selectbox("Select Run", list(run_options.keys()))
-        selected_run_id = run_options[selected_label]
-        
+def dashboard(selected_run_id):
     state = load_state_from_db(selected_run_id) or load_state_safe()
     logs = load_logs_safe()
     
@@ -370,4 +361,13 @@ def dashboard():
             st.markdown(f'<div class="log-viewer">{logs}</div>', unsafe_allow_html=True)
 
 # Run Dashboard
-dashboard()
+runs = get_all_runs()
+selected_run_id = None
+
+if runs:
+    st.sidebar.markdown("### Historical Runs")
+    run_options = {r[1]: r[0] for r in runs}
+    selected_label = st.sidebar.selectbox("Select Run", list(run_options.keys()))
+    selected_run_id = run_options[selected_label]
+
+dashboard(selected_run_id)
