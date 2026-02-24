@@ -53,7 +53,8 @@ class WorkflowOrchestrator:
         max_parallel: int = 4,
         enable_cache: bool = True,
         executor = None,
-        experiment_name: Optional[str] = None
+        experiment_name: Optional[str] = None,
+        schedule: Optional[str] = None
     ):
         """
         Initialize workflow orchestrator
@@ -65,8 +66,10 @@ class WorkflowOrchestrator:
             enable_cache: Enable result caching
             executor: Custom executor (defaults to ParallelExecutor)
             experiment_name: Optional experiment name for MLOps tracking
+            schedule: Optional Cron string (e.g. '0 0 * * *' for daily)
         """
         self.name = name
+        self.schedule = schedule
         self.tasks: Dict[str, Task] = {}
         self.results: Dict[str, TaskResult] = {}
         self._results_lock = threading.Lock()

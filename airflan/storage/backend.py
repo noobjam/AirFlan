@@ -36,6 +36,18 @@ class TaskInstance(Base):
     attempt_count = Column(Integer, default=1)
     error_trace = Column(Text, nullable=True)
 
+class XCom(Base):
+    """Tracks data passed between tasks (Cross-Communication)"""
+    __tablename__ = 'xcom'
+    
+    id = Column(Integer, primary_key=True)
+    task_id = Column(String(250), nullable=False)
+    dag_id = Column(String(250), nullable=False)
+    run_id = Column(String(250), nullable=False)
+    key = Column(String(250), nullable=False)
+    value = Column(Text, nullable=True) # Stored as JSON string
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
 class Log(Base):
     """Stores workflow and task logs"""
     __tablename__ = 'logs'
