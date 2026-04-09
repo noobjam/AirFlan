@@ -12,7 +12,7 @@ import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     from dask.distributed import Client, as_completed as dask_as_completed
@@ -24,6 +24,7 @@ from loguru import logger
 
 from .context import WorkflowContext
 from .task import Task, TaskResult, TaskStatus
+from ..storage.cache import CacheManager
 
 
 class BaseExecutor(ABC):
@@ -61,9 +62,18 @@ class BaseExecutor(ABC):
 class SequentialExecutor(BaseExecutor):
     """Execute tasks one at a time in order"""
     
-    def __init__(self, cache_enabled: bool = True):
+    def __init__(
+        self,
+        cache_enabled: bool = True,
+        cache_manager: Optional[CacheManager] = None
+    ):
         self.cache_enabled = cache_enabled
-        self._cache: Dict[str, any] = {}
+        self._cache: Dict[str, Any] = {}
+        self._cache_manager = cache_manager
+
+    def set_cache_manager(self, cache_manager: Optional[CacheManager]) -> None:
+        """Attach a shared cache backend after initialization."""
+        self._cache_manager = cache_manager
     
     def execute_tasks(
         self, 
@@ -133,7 +143,7 @@ class SequentialExecutor(BaseExecutor):
         context.set(f"result_{task.name}", result.output)
         
         # Stop workflow if critical task failed
-        if result.status == TaskStatus.FAILED and not task.skip_on_failure:
+        if result.status in {TaskStatus.FAILED, TaskStatus.TIMEOUT} and not task.skip_on_failure:
             raise Exception(f"Critical task {task.name} failed. Stopping workflow.")
     
     def _execute_task(self, task: Task, context: WorkflowContext) -> TaskResult:
@@ -287,23 +297,33 @@ class SequentialExecutor(BaseExecutor):
             raise exception[0]
         return result[0]
     
-    def _get_cached_result(self, task: Task) -> Optional[any]:
+    def _get_cached_result(self, task: Task) -> Optional[Any]:
         """Get cached result if available"""
         if not self.cache_enabled or not task.cache_result or not task.cache_key:
             return None
+        if self._cache_manager is not None:
+            return self._cache_manager.get(task)
         return self._cache.get(task.cache_key)
     
-    def _cache_result(self, task: Task, result: any) -> None:
+    def _cache_result(self, task: Task, result: Any) -> None:
         """Cache task result"""
         if self.cache_enabled and task.cache_result and task.cache_key:
-            self._cache[task.cache_key] = result
+            if self._cache_manager is not None:
+                self._cache_manager.set(task, result)
+            else:
+                self._cache[task.cache_key] = result
 
 
 class ParallelExecutor(SequentialExecutor):
     """Execute tasks in parallel using thread pool"""
     
-    def __init__(self, max_workers: int = 4, cache_enabled: bool = True):
-        super().__init__(cache_enabled)
+    def __init__(
+        self,
+        max_workers: int = 4,
+        cache_enabled: bool = True,
+        cache_manager: Optional[CacheManager] = None
+    ):
+        super().__init__(cache_enabled, cache_manager=cache_manager)
         self.max_workers = max_workers
     
     def execute_tasks(
@@ -345,8 +365,13 @@ class ParallelExecutor(SequentialExecutor):
 class DaskExecutor(SequentialExecutor):
     """Execute tasks in parallel using a Dask cluster"""
     
-    def __init__(self, scheduler_address: Optional[str] = None, cache_enabled: bool = True):
-        super().__init__(cache_enabled)
+    def __init__(
+        self,
+        scheduler_address: Optional[str] = None,
+        cache_enabled: bool = True,
+        cache_manager: Optional[CacheManager] = None
+    ):
+        super().__init__(cache_enabled, cache_manager=cache_manager)
         self.scheduler_address = scheduler_address
         if not DASK_AVAILABLE:
             raise ImportError("Dask is not installed. Please install with: pip install 'dask[distributed]'")
@@ -440,7 +465,7 @@ class DaskExecutor(SequentialExecutor):
                     on_update()
                     
                 # Stop workflow if critical task failed
-                if results[task.name].status == TaskStatus.FAILED and not task.skip_on_failure:
+                if results[task.name].status in {TaskStatus.FAILED, TaskStatus.TIMEOUT} and not task.skip_on_failure:
                     self.client.cancel(list(futures_map.keys())) # Cancel remaining
                     raise Exception(f"Critical task {task.name} failed. Stopping workflow.")
                     
