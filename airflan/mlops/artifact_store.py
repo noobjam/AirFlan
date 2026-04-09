@@ -29,6 +29,8 @@ class ArtifactStore:
         """
         self.artifacts_dir = Path(artifacts_dir)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.objects_dir = self.artifacts_dir / "objects"
+        self.objects_dir.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Initialized artifact store at {self.artifacts_dir}")
     
     def _compute_hash(self, file_path: Path) -> str:
@@ -60,12 +62,22 @@ class ArtifactStore:
         # Create run-specific directory
         run_dir = self.artifacts_dir / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
+
+        content_hash = self._compute_hash(source)
+        object_path = self.objects_dir / f"{content_hash}{source.suffix}"
+
+        if not object_path.exists():
+            shutil.copy2(source, object_path)
         
         # Store with original name in run directory
         dest_path = run_dir / artifact_name
-        
-        # Copy file
-        shutil.copy2(source, dest_path)
+
+        if not dest_path.exists():
+            try:
+                dest_path.hardlink_to(object_path)
+            except OSError:
+                shutil.copy2(object_path, dest_path)
+
         size_bytes = dest_path.stat().st_size
         
         logger.info(f"Stored artifact {artifact_name} ({size_bytes} bytes) for run {run_id}")

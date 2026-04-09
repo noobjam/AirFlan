@@ -4,6 +4,7 @@ AirFlan Storage Module - Cache Manager
 This module provides result caching functionality.
 """
 
+import threading
 from typing import Any, Dict, Optional
 
 from ..core.task import Task
@@ -27,6 +28,7 @@ class CacheManager:
         """
         self.enabled = enabled
         self._cache: Dict[str, Any] = {}
+        self._lock = threading.Lock()
     
     def get(self, task: Task) -> Optional[Any]:
         """
@@ -40,7 +42,8 @@ class CacheManager:
         """
         if not self.enabled or not task.cache_result or not task.cache_key:
             return None
-        return self._cache.get(task.cache_key)
+        with self._lock:
+            return self._cache.get(task.cache_key)
     
     def set(self, task: Task, result: Any) -> None:
         """
@@ -51,15 +54,18 @@ class CacheManager:
             result: Result to cache
         """
         if self.enabled and task.cache_result and task.cache_key:
-            self._cache[task.cache_key] = result
-    
+            with self._lock:
+                self._cache[task.cache_key] = result
+
     def clear(self) -> None:
         """Clear all cached results"""
-        self._cache.clear()
-    
+        with self._lock:
+            self._cache.clear()
+
     def size(self) -> int:
         """Get number of cached items"""
-        return len(self._cache)
+        with self._lock:
+            return len(self._cache)
     
     def __repr__(self) -> str:
         """String representation"""

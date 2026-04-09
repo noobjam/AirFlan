@@ -1,11 +1,11 @@
 import importlib.util
 import inspect
 import sys
-import os
 import time
+import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from loguru import logger
 from croniter import croniter
 
@@ -28,6 +28,8 @@ class SchedulerDaemon:
         self.parse_interval = parse_interval
         self.known_workflows: Dict[str, WorkflowOrchestrator] = {}
         self.workflow_schedules: Dict[str, str] = {} # dag_id -> cron_string
+        self._active_runs = set()
+        self._active_runs_lock = threading.Lock()
         
         self.db = DatabaseSession(db_url)
         self.db.init_db()
@@ -63,8 +65,20 @@ class SchedulerDaemon:
                 
     def _should_run_workflow(self, dag_id: str, cron_string: str) -> bool:
         """Evaluate if a workflow should run right now based on its cron schedule"""
+        with self._active_runs_lock:
+            if dag_id in self._active_runs:
+                return False
+
         session = self.db.get_session()
         try:
+            running_run = session.query(DagRun).filter(
+                DagRun.dag_id == dag_id,
+                DagRun.status == "running"
+            ).order_by(DagRun.start_time.desc()).first()
+
+            if running_run:
+                return False
+
             # Find the last completed or failed run
             last_run = session.query(DagRun).filter(
                 DagRun.dag_id == dag_id,
@@ -94,19 +108,26 @@ class SchedulerDaemon:
         """Execute the workflow in a non-blocking process/thread. 
            In Phase 4 we will spawn a subprocess to avoid blocking the scheduler loop.
         """
+        with self._active_runs_lock:
+            if orchestrator.name in self._active_runs:
+                logger.info(f"Skipping {orchestrator.name} - run already active")
+                return
+            self._active_runs.add(orchestrator.name)
+
         logger.info(f"Triggering scheduled workflow: {orchestrator.name}")
-        import subprocess
         # Assuming the workflow file can be executed directly as `python filename.py`
         # In a pure daemon, we might pickle it and send it to a worker. 
         # For this phase, we'll run it in a subprocess using a generic AirFlan CLI entrypoint (Phase 5).
         # For now, we will just call it in a thread so the scheduler loop continues.
         
-        import threading
         def run_it():
             try:
                 orchestrator.run(parallel=True, enable_ui=False)
             except Exception as e:
                 logger.error(f"Scheduled run failed: {e}")
+            finally:
+                with self._active_runs_lock:
+                    self._active_runs.discard(orchestrator.name)
                 
         t = threading.Thread(target=run_it, daemon=True)
         t.start()

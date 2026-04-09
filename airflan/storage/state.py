@@ -1,15 +1,13 @@
 import json
 import threading
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, Optional
 
 from loguru import logger
-from sqlalchemy.orm import Session
 from sqlalchemy import exc
 
 from ..core.task import Task, TaskResult
-from .backend import DatabaseSession, DagRun, TaskInstance
+from .backend import DatabaseSession, DagRun, TaskInstance, XCom
 
 class StateManager:
     """
@@ -74,8 +72,15 @@ class StateManager:
             session = self.db.get_session()
             try:
                 # Check if workflow is finished
-                is_finished = len(results) == len(tasks) and all(r.status.value in ['completed', 'failed', 'skipped'] for r in results.values())
-                has_failures = any(r.status.value == 'failed' for r in results.values())
+                terminal_statuses = {'completed', 'failed', 'skipped', 'timeout'}
+                is_finished = (
+                    len(results) == len(tasks)
+                    and all(r.status.value in terminal_statuses for r in results.values())
+                )
+                has_failures = any(
+                    r.status.value in {'failed', 'timeout'}
+                    for r in results.values()
+                )
                 
                 # Update DagRun terminal status
                 if is_finished:
@@ -103,12 +108,24 @@ class StateManager:
                         ti.status = result.status.value
                         ti.execution_time = result.execution_time
                         ti.attempt_count = result.attempt_count
+
+                        if result.start_time:
+                            ti.start_time = self._parse_timestamp(result.start_time)
                         
                         if result.error_trace:
                             ti.error_trace = result.error_trace
                             
-                        if result.status.value in ['completed', 'failed', 'skipped'] and not ti.end_time:
+                        if result.status.value in terminal_statuses and result.end_time:
+                            ti.end_time = self._parse_timestamp(result.end_time)
+                        elif result.status.value in terminal_statuses and not ti.end_time:
                             ti.end_time = datetime.utcnow()
+
+                        self._upsert_task_output(
+                            session=session,
+                            workflow_name=workflow_name,
+                            task_name=name,
+                            result=result
+                        )
                             
                 session.commit()
                 
@@ -136,6 +153,44 @@ class StateManager:
                 logger.error(f"Failed to update state in DB: {e}\n{traceback.format_exc()}")
             finally:
                 session.close()
+
+    def _upsert_task_output(
+        self,
+        session,
+        workflow_name: str,
+        task_name: str,
+        result: TaskResult
+    ) -> None:
+        """Persist task outputs as XCom-style records for later inspection."""
+        if result.output is None or not self.run_id:
+            return
+
+        payload = json.dumps(result.output, default=str)
+        xcom = session.query(XCom).filter_by(
+            run_id=self.run_id,
+            task_id=task_name,
+            key="return_value"
+        ).first()
+
+        if not xcom:
+            xcom = XCom(
+                task_id=task_name,
+                dag_id=workflow_name,
+                run_id=self.run_id,
+                key="return_value"
+            )
+            session.add(xcom)
+
+        xcom.value = payload
+        xcom.timestamp = datetime.utcnow()
+
+    @staticmethod
+    def _parse_timestamp(value: str) -> datetime:
+        """Parse ISO timestamps emitted by TaskResult."""
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return datetime.utcnow()
             
     def load_state(self) -> Optional[Dict]:
         """

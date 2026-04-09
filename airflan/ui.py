@@ -1,25 +1,28 @@
 """
-AirFlan Monitor - Enterprise Workflow Visualization
+AirFlan Monitor - Workflow Operations Console
 """
 
 import json
 import sys
 import time
+from datetime import datetime
+from html import escape
 from pathlib import Path
 
+import dateutil.parser
 import streamlit as st
-from streamlit_agraph import agraph, Node, Edge, Config
+from streamlit_agraph import Config, Edge, Node, agraph
+
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 try:
-    from airflan.storage.backend import DatabaseSession, DagRun, TaskInstance
-    from sqlalchemy.orm import Session
+    from airflan.storage.backend import DagRun, DatabaseSession, TaskInstance
 except ImportError:
     st.error("Could not import AirFlan DatabaseBackend. Run `pip install -e .` First")
     st.stop()
 
-# ----------------------------------
-# Configuration
-# ----------------------------------
+
 if len(sys.argv) > 2:
     STATE_FILE = sys.argv[1]
     LOG_FILE = sys.argv[2]
@@ -27,229 +30,383 @@ else:
     STATE_FILE = "workflow_state.json"
     LOG_FILE = "workflow_logs.txt"
 
+
 st.set_page_config(
     page_title="AirFlan Monitor",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# ----------------------------------
-# Enterprise Design System
-# ----------------------------------
-st.markdown("""
+
+st.markdown(
+    """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap');
-    
-    /* Core App Framework - Light Mode Minimalist */
-    .stApp {
-        background-color: #f8fafc; /* Slate 50 */
-        color: #0f172a;
-    }
-    
-    h1, h2, h3, p, div, span {
-        font-family: 'Outfit', sans-serif;
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+    :root {
+        --bg: #0b1220;
+        --bg-2: #101827;
+        --panel: rgba(15, 23, 36, 0.92);
+        --panel-soft: rgba(15, 23, 36, 0.78);
+        --line: rgba(148, 163, 184, 0.16);
+        --line-strong: rgba(148, 163, 184, 0.24);
+        --text: #ecf3fb;
+        --muted: #94a3b8;
+        --blue: #4ba3ff;
+        --green: #2fd39a;
+        --amber: #f4b740;
+        --rose: #ff5f7d;
+        --slate: #7f93a8;
     }
 
-    /* Top Navigation Bar */
-    .header-container {
-        background: transparent;
-        padding: 1rem 0rem;
-        border-bottom: 1px solid #e2e8f0;
-        margin: -4rem 0rem 2rem 0rem; 
+    .stApp {
+        background: linear-gradient(180deg, #0b1220 0%, #0a101a 100%);
+        color: var(--text);
+    }
+
+    [data-testid="stAppViewContainer"] > .main {
+        padding-top: 1.2rem;
+    }
+
+    h1, h2, h3, h4, p, div, span, label {
+        font-family: 'Space Grotesk', sans-serif !important;
+    }
+
+    code, pre, [data-testid="stDataFrame"] td {
+        font-family: 'IBM Plex Mono', monospace !important;
+    }
+
+    #MainMenu, footer, header {
+        visibility: hidden;
+    }
+
+    [data-testid="stSidebar"] {
+        background: #0f1724;
+        border-right: 1px solid var(--line);
+    }
+
+    [data-testid="stSidebar"] * {
+        color: var(--text) !important;
+    }
+
+    [data-testid="stSidebar"] .stSelectbox label {
+        color: var(--muted) !important;
+        text-transform: uppercase;
+        font-size: 0.76rem;
+        letter-spacing: 0.12em;
+    }
+
+    .shell {
+        margin-top: -1rem;
+    }
+
+    .hero {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .hero-card, .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .hero-card {
+        padding: 1.15rem 1.2rem;
+    }
+
+    .eyebrow {
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        margin-bottom: 0.55rem;
+    }
+
+    .title-row {
         display: flex;
         align-items: center;
-    }
-    
-    .brand-title {
-        font-size: 1.4rem;
-        font-weight: 600;
-        color: #0f172a;
-        margin-right: 1.2rem;
-        letter-spacing: -0.02em;
-    }
-    
-    .brand-subtitle {
-        font-size: 0.9rem;
-        color: #64748b;
-        font-weight: 400;
-        border-left: 1px solid #e2e8f0;
-        padding-left: 1.2rem;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.55rem;
     }
 
-    /* Metric Cards - Minimalist Soft Shadow */
-    .metric-container {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
+    .main-title {
+        font-size: 1.55rem;
+        line-height: 1;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+        color: var(--text);
+    }
+
+    .subtitle {
+        color: var(--muted);
+        font-size: 0.9rem;
+        max-width: 42rem;
+        line-height: 1.45;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.42rem 0.78rem;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        background: rgba(255, 255, 255, 0.02);
+        white-space: nowrap;
+    }
+
+    .status-dot {
+        width: 0.48rem;
+        height: 0.48rem;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: none;
+    }
+
+    .metric-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.8rem;
+        margin-top: 1.2rem;
+    }
+
+    .metric-tile {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--line);
         border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-        height: 100%;
+        padding: 0.8rem 0.9rem;
+    }
+
+    .metric-kicker {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        margin-bottom: 0.45rem;
+    }
+
+    .metric-number {
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+        color: var(--text);
+    }
+
+    .side-summary {
+        padding: 1.1rem 1.15rem;
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.9rem;
+        margin-top: 1rem;
+    }
+
+    .summary-item {
+        border-top: 1px solid var(--line);
+        padding-top: 0.7rem;
+    }
+
+    .summary-label {
+        color: var(--muted);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+    }
+
+    .summary-value {
+        margin-top: 0.25rem;
+        font-size: 1rem;
+        color: var(--text);
+        font-weight: 600;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
+    .panel {
+        padding: 0.95rem 1rem 1rem 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .panel-header {
         display: flex;
-        flex-direction: column;
-        justify-content: center;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        margin-bottom: 0.9rem;
     }
-    .metric-container:hover {
-        transform: translateY(-2px);
-        border-color: #cbd5e1; 
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-    }
-    
-    .metric-item {
-        margin-bottom: 1.5rem;
-    }
-    .metric-item:last-child {
-        margin-bottom: 0;
-    }
-    
-    .metric-label {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: #64748b; 
-        margin-bottom: 0.3rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-    }
-    
-    .metric-value {
-        font-size: 2.2rem;
-        font-weight: 600;
-        color: #0f172a;
-        line-height: 1.1;
+
+    .panel-title {
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 700;
         letter-spacing: -0.02em;
     }
-    
-    /* Clean Data Tables */
-    [data-testid="stDataFrame"] {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 0.5rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-    }
-    [data-testid="stDataFrame"] table {
-        color: #334155 !important;
-    }
-    [data-testid="stDataFrame"] th {
-        background-color: transparent !important;
-        border-bottom: 1px solid #e2e8f0 !important;
-        color: #64748b !important;
-        font-family: 'Outfit', sans-serif !important;
-        font-weight: 500 !important;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.05em;
-    }
-    [data-testid="stDataFrame"] td {
-        border-bottom: 1px solid #f1f5f9 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.9rem;
-    }
 
-    /* Terminal/Logs */
-    .log-viewer {
-        font-family: 'JetBrains Mono', monospace;
+    .panel-caption {
+        color: var(--muted);
         font-size: 0.8rem;
-        background-color: #f8fafc; 
-        color: #334155; 
-        padding: 1.5rem;
+    }
+
+    .log-viewer {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8rem;
+        background: #0a1220;
+        color: #cdd9e6;
+        border: 1px solid var(--line);
         border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        height: 400px;
-        overflow-y: auto;
+        padding: 1rem;
+        min-height: 320px;
         white-space: pre-wrap;
-        line-height: 1.6;
-        box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+        overflow-y: auto;
+        line-height: 1.55;
     }
 
-    /* Hide Streamlit branding */
-    #MainMenu, footer, header {visibility: hidden;}
-
-    /* Sidebar Styling */
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e2e8f0;
+    [data-testid="stDataFrame"] {
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
     }
-    
+
+    [data-testid="stDataFrame"] th {
+        background: rgba(255, 255, 255, 0.03) !important;
+        color: var(--muted) !important;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        border-bottom: 1px solid var(--line) !important;
+    }
+
+    [data-testid="stDataFrame"] td {
+        color: var(--text) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+    }
+
+    .sidebar-note {
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.55;
+        margin-top: 0.5rem;
+    }
+
+    .empty-state {
+        padding: 1.2rem 1.3rem;
+        border-radius: 16px;
+        border: 1px dashed var(--line-strong);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--muted);
+    }
+
+    @media (max-width: 1100px) {
+        .hero {
+            grid-template-columns: 1fr;
+        }
+
+        .metric-strip {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# ----------------------------------
-# Helper Functions
-# ----------------------------------
+
+STATUS_COLORS = {
+    "running": "#4ba3ff",
+    "completed": "#2fd39a",
+    "failed": "#ff5f7d",
+    "pending": "#7f93a8",
+    "skipped": "#93a5b8",
+    "timeout": "#f4b740",
+}
+
+
 def load_state_safe():
-    """Robustly load state with retries"""
+    """Robustly load state with retries."""
     for _ in range(3):
         try:
             if not Path(STATE_FILE).exists():
                 return None
-            with open(STATE_FILE, 'r') as f:
+            with open(STATE_FILE, "r") as f:
                 content = f.read().strip()
-                if not content: return None
+                if not content:
+                    return None
                 return json.loads(content)
-        except:
+        except Exception:
             time.sleep(0.05)
     return None
 
+
 def load_logs_safe():
-    """Safe log loading with efficient tailing for large files"""
+    """Safe log loading with efficient tailing for large files."""
     try:
         log_path = Path(LOG_FILE)
-        if not log_path.exists(): return ""
-        
+        if not log_path.exists():
+            return ""
+
         file_size = log_path.stat().st_size
-        # Read last 50KB (~500 lines)
-        read_size = min(file_size, 50 * 1024) 
-        
+        read_size = min(file_size, 50 * 1024)
+
         with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
             if file_size > read_size:
                 f.seek(file_size - read_size)
-                # Discard partial line at start
                 f.readline()
-            
+
             content = f.read()
-            
-            # Simple ANSI cleanup
-            content = content.replace("\033[95m", "").replace("\033[0m", "")
-            content = content.replace("\033[94m", "").replace("\033[96m", "")
-            content = content.replace("\033[92m", "").replace("\033[93m", "")
-            content = content.replace("\033[91m", "").replace("\033[1m", "")
-            
+            for code in ("\033[95m", "\033[0m", "\033[94m", "\033[96m", "\033[92m", "\033[93m", "\033[91m", "\033[1m"):
+                content = content.replace(code, "")
             return content
     except Exception:
         return "Error reading logs"
 
+
 def get_all_runs():
-    """Get list of past DAG Runs for the sidebar"""
+    """Get list of recent DAG runs for the sidebar."""
     db = DatabaseSession()
     session = db.get_session()
     try:
         runs = session.query(DagRun).order_by(DagRun.start_time.desc()).limit(50).all()
-        return [(r.run_id, f"{r.dag_id} ({r.start_time.strftime('%m-%d %H:%M:%S')}) - {r.status.upper()}") for r in runs]
+        return [
+            (
+                r.run_id,
+                f"{r.dag_id} ({r.start_time.strftime('%m-%d %H:%M:%S')}) - {r.status.upper()}",
+            )
+            for r in runs
+        ]
     except Exception:
         return []
     finally:
         session.close()
 
+
 def load_state_from_db(run_id=None):
-    """Load latest workflow state directly from SQLite Database"""
+    """Load workflow state directly from the metadata database."""
     db = DatabaseSession()
     session = db.get_session()
-    
+
     try:
         if run_id:
             target_run = session.query(DagRun).filter_by(run_id=run_id).first()
         else:
             target_run = session.query(DagRun).order_by(DagRun.start_time.desc()).first()
-            
+
         if not target_run:
             return None
-            
+
         tasks = session.query(TaskInstance).filter_by(run_id=target_run.run_id).all()
-        
-        # Build state dict expected by the UI graph 
+
         state = {
             "name": target_run.dag_id,
             "status": target_run.status,
@@ -258,226 +415,325 @@ def load_state_from_db(run_id=None):
             "tasks": {t.task_id: {"depends_on": []} for t in tasks},
             "results": {
                 t.task_id: {
-                    "status": t.status, 
-                    "execution_time": t.execution_time
-                } for t in tasks
-            }
+                    "status": t.status,
+                    "execution_time": t.execution_time,
+                }
+                for t in tasks
+            },
         }
-        
-        # Fallback to merge dependencies from JSON if available and matches dag_id
-        # (This is a temporary hack until Dag structure is serialized in Phase 6)
+
         try:
             struct_file = f"{target_run.dag_id}_structure.json"
             if Path(struct_file).exists():
-                with open(struct_file, 'r') as f:
+                with open(struct_file, "r") as f:
                     json_state = json.load(f)
-                for t_id, data in json_state.get('tasks', {}).items():
-                    if t_id in state["tasks"]:
-                        state["tasks"][t_id]["depends_on"] = data.get("depends_on", [])
-        except:
+                for task_id, data in json_state.get("tasks", {}).items():
+                    if task_id in state["tasks"]:
+                        state["tasks"][task_id]["depends_on"] = data.get("depends_on", [])
+        except Exception:
             pass
-                    
+
         return state
     except Exception as e:
         import traceback
+
         st.error(f"Error loading from DB: {e}\n{traceback.format_exc()}")
         return None
     finally:
         session.close()
 
-def get_status_color(status):
-    return {
-        "running": "#3b82f6",   # Blue
-        "completed": "#10b981", # Emerald
-        "failed": "#f43f5e",    # Rose
-        "pending": "#cbd5e1",   # Slate 300
-        "skipped": "#94a3b8",   # Slate 400
-        "timeout": "#f59e0b"    # Amber
-    }.get(status, "#cbd5e1")
 
-def get_status_font_color(status):
-    return "#0f172a"
+def get_status_color(status: str) -> str:
+    return STATUS_COLORS.get(status, STATUS_COLORS["pending"])
 
-# ----------------------------------
-# Layout & Components
-# ----------------------------------
 
-# Header
-st.markdown("""
-    <div class="header-container">
-        <span class="brand-title">AirFlan</span>
-        <span class="brand-subtitle">Workflow Monitor</span>
-    </div>
-""", unsafe_allow_html=True)
+def render_status_badge(status: str) -> str:
+    color = get_status_color(status)
+    label = escape(status.upper())
+    return (
+        f"<span class='status-badge' style='color:{color};'>"
+        f"<span class='status-dot'></span>{label}</span>"
+    )
 
-# ----------------------------------
-# Main Dashboard (Fragment)
-# ----------------------------------
-@st.fragment(run_every=2)
-def dashboard(selected_run_id):
-    state = load_state_from_db(selected_run_id) or load_state_safe()
-    logs = load_logs_safe()
-    
-    if not state:
-        st.info("No workflow runs found. Waiting for tasks...")
-        return
-        
+
+def format_duration(start_time, end_time):
+    if not start_time:
+        return "0.0s"
+    try:
+        start_dt = dateutil.parser.isoparse(start_time)
+        if end_time:
+            end_dt = dateutil.parser.isoparse(end_time)
+        else:
+            end_dt = datetime.utcnow()
+        duration = max((end_dt - start_dt).total_seconds(), 0)
+        return f"{duration:.1f}s"
+    except Exception:
+        return "0.0s"
+
+
+def compute_metrics(state):
     results = state.get("results", {})
     tasks = state.get("tasks", {})
-    
+
     total = len(tasks)
     completed = sum(1 for r in results.values() if r["status"] == "completed")
-    failed = sum(1 for r in results.values() if r["status"] == "failed")
+    failed = sum(1 for r in results.values() if r["status"] in {"failed", "timeout"})
     running = sum(1 for r in results.values() if r["status"] == "running")
-    
-    import dateutil.parser
-    from datetime import datetime
-    
-    duration_str = "0.0s"
-    if state.get("start_time"):
-        try:
-            start_dt = dateutil.parser.isoparse(state["start_time"])
-            if state.get("end_time"):
-                end_dt = dateutil.parser.isoparse(state["end_time"])
-                dur = (end_dt - start_dt).total_seconds()
-            else:
-                dur = (datetime.utcnow() - start_dt).total_seconds()
-            duration_str = f"{dur:.1f}s"
-        except:
-            pass
-    
-    # --- Top Row: DAG Visualization ---
-    st.markdown("<h3 style='margin-bottom: -1rem; color: #0f172a;'>DAG Visualization</h3>", unsafe_allow_html=True)
-    
-    # We want the Agraph to take full width up top like Prefect
+    skipped = sum(1 for r in results.values() if r["status"] == "skipped")
+    pending = max(total - len(results), 0)
+    success_rate = f"{(completed / total * 100):.0f}%" if total else "0%"
+
+    return {
+        "total": total,
+        "completed": completed,
+        "failed": failed,
+        "running": running,
+        "skipped": skipped,
+        "pending": pending,
+        "success_rate": success_rate,
+        "duration": format_duration(state.get("start_time"), state.get("end_time")),
+    }
+
+
+def render_metric_tile(label: str, value: str, accent: str = None):
+    style = f"color:{accent};" if accent else ""
+    st.markdown(
+        f"""
+        <div class="metric-tile">
+            <div class="metric-kicker">{escape(label)}</div>
+            <div class="metric-number" style="{style}">{escape(str(value))}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def build_graph(tasks, results):
     nodes = []
     edges = []
-    
+
     for name in tasks.keys():
         status = results.get(name, {}).get("status", "pending")
         color = get_status_color(status)
-        font_color = get_status_font_color(status)
-        
-        # Subtle shadow for active states
-        shadow = None
-        if status in ["running", "failed"]:
-            shadow = {'enabled': True, 'color': 'rgba(0,0,0,0.1)', 'size': 10, 'x': 0, 'y': 4}
-        
-        nodes.append(Node(
-            id=name,
-            label=name.replace("_", "\n"),
-            size=30,
-            color={'background': '#ffffff', 'border': color, 'highlight': {'border': color, 'background': '#f8fafc'}},
-            font={'color': font_color, 'face': 'Outfit', 'size': 14, 'weight': '500'},
-            shape='box',
-            shapeProperties={'borderRadius': 6},
-            borderWidth=2,
-            borderWidthSelected=3,
-            shadow=shadow
-        ))
-        
+
+        nodes.append(
+            Node(
+                id=name,
+                label=name.replace("_", " "),
+                size=28,
+                color={
+                    "background": "#091521",
+                    "border": color,
+                    "highlight": {"background": "#102030", "border": color},
+                },
+                font={"color": "#eaf2fa", "face": "Space Grotesk", "size": 15, "weight": "600"},
+                shape="box",
+                shapeProperties={"borderRadius": 8},
+                borderWidth=2,
+                borderWidthSelected=3,
+                shadow={"enabled": status in {"running", "failed", "timeout"}, "color": color, "size": 12, "x": 0, "y": 0},
+            )
+        )
+
         for dep in tasks[name].get("depends_on", []):
-            edges.append(Edge(
-                source=dep, 
-                target=name,
-                color={'color': '#94a3b8', 'highlight': '#475569'},
-                width=2,
-                arrows='to',
-                type='smooth',
-                smooth={'type': 'cubicBezier', 'forceDirection': 'horizontal', 'roundness': 0.6}
-            ))
-    
+            edges.append(
+                Edge(
+                    source=dep,
+                    target=name,
+                    color={"color": "rgba(143, 167, 192, 0.55)", "highlight": color},
+                    width=2,
+                    arrows="to",
+                    type="smooth",
+                    smooth={"type": "cubicBezier", "forceDirection": "horizontal", "roundness": 0.45},
+                )
+            )
+
     config = Config(
-        height=400,
+        height=460,
         width="100%",
         directed=True,
         physics=False,
         hierarchical=True,
-        dagMode='LR',  # Left-to-Right like Prefect
-        dagLevelDistance=160,
-        nodeSpacing=100,
-        staticGraph=False, # Allow dragging and zoom
-        interaction={'dragNodes': False, 'dragView': True, 'zoomView': True},
-        backgroundColor='transparent'
+        dagMode="LR",
+        dagLevelDistance=190,
+        nodeSpacing=120,
+        staticGraph=False,
+        interaction={"dragNodes": False, "dragView": True, "zoomView": True},
+        backgroundColor="transparent",
     )
-    
-    if nodes:
-        agraph(nodes=nodes, edges=edges, config=config)
-    
-    st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
-    
-    # --- Bottom Row: Metrics & Data ---
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">Tasks Total</div>
-                <div class="metric-value">{total}</div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-    with col2:
-        st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">Running</div>
-                <div class="metric-value" style="color: #3b82f6;">{running}</div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-    with col3:
-        st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">Success</div>
-                <div class="metric-value" style="color: #10b981;">{completed}</div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-    with col4:
-        st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">Failed Runs</div>
-                <div class="metric-value" style="color: #f43f5e;">{failed}</div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-    with col5:
-        st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">Run Time</div>
-                <div class="metric-value" style="color: #64748b;">{duration_str}</div>
-            </div>
-        """, unsafe_allow_html=True)
 
-    st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
-    
-    # --- Tables & Logs Row ---
-    if results or (logs and logs.strip()):
-        col_t, col_l = st.columns([1, 1])
-        
-        with col_t:
-            if results:
-                data = []
-                for name, res in results.items():
-                    data.append({
-                        "Task": name,
-                        "Status": res["status"].upper(),
-                        "Dur": f"{res.get('execution_time') or 0:.1f}s"
-                    })
-                st.dataframe(data, use_container_width=True, hide_index=True, height=300)
-                
-        with col_l:
-            if logs and logs.strip():
-                st.markdown(f'<div class="log-viewer" style="height: 300px;">{logs}</div>', unsafe_allow_html=True)
+    return nodes, edges, config
 
-# Run Dashboard
+
+st.sidebar.markdown("## AirFlan")
+st.sidebar.markdown("#### Workflow Console")
+st.sidebar.markdown(
+    "<div class='sidebar-note'>Operational view of DAG execution, scheduler state, and task outcomes.</div>",
+    unsafe_allow_html=True,
+)
+
 runs = get_all_runs()
 selected_run_id = None
 
 if runs:
-    st.sidebar.markdown("### Historical Runs")
-    run_options = {r[1]: r[0] for r in runs}
-    selected_label = st.sidebar.selectbox("Select Run", list(run_options.keys()))
+    run_options = {label: run_id for run_id, label in runs}
+    selected_label = st.sidebar.selectbox("Run", list(run_options.keys()))
     selected_run_id = run_options[selected_label]
+else:
+    st.sidebar.markdown(
+        "<div class='sidebar-note'>No persisted runs yet. Execute a workflow to populate the console.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+@st.fragment(run_every=2)
+def dashboard(selected_run_id):
+    state = load_state_from_db(selected_run_id) or load_state_safe()
+    logs = load_logs_safe()
+
+    st.markdown("<div class='shell'>", unsafe_allow_html=True)
+
+    if not state:
+        st.markdown(
+            "<div class='empty-state'>No workflow runs found. The console will populate as soon as the orchestrator writes metadata.</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    results = state.get("results", {})
+    tasks = state.get("tasks", {})
+    metrics = compute_metrics(state)
+    workflow_name = state.get("name", "workflow")
+    status = state.get("status", "running")
+
+    st.markdown(
+        f"""
+        <div class="hero">
+            <div class="hero-card">
+                <div class="eyebrow">AirFlan Control Room</div>
+                <div class="title-row">
+                    <div class="main-title">{escape(workflow_name)}</div>
+                    {render_status_badge(status)}
+                </div>
+                <div class="subtitle">
+                    Selected workflow run, task states, and recent execution output.
+                </div>
+                <div class="metric-strip">
+                    <div class="metric-tile">
+                        <div class="metric-kicker">Tasks</div>
+                        <div class="metric-number">{metrics["total"]}</div>
+                    </div>
+                    <div class="metric-tile">
+                        <div class="metric-kicker">Success Rate</div>
+                        <div class="metric-number" style="color:#2fd39a;">{metrics["success_rate"]}</div>
+                    </div>
+                    <div class="metric-tile">
+                        <div class="metric-kicker">Active</div>
+                        <div class="metric-number" style="color:#4ba3ff;">{metrics["running"]}</div>
+                    </div>
+                    <div class="metric-tile">
+                        <div class="metric-kicker">Failures</div>
+                        <div class="metric-number" style="color:#ff5f7d;">{metrics["failed"]}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-card side-summary">
+                <div class="eyebrow">Run Snapshot</div>
+                <div class="panel-title">Execution Envelope</div>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <div class="summary-label">Started</div>
+                        <div class="summary-value">{escape(state.get("start_time") or "N/A")}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Finished</div>
+                        <div class="summary-value">{escape(state.get("end_time") or "In Progress")}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Pending</div>
+                        <div class="summary-value">{metrics["pending"]}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Skipped</div>
+                        <div class="summary-value">{metrics["skipped"]}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Completed</div>
+                        <div class="summary-value">{metrics["completed"]}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Run Time</div>
+                        <div class="summary-value">{metrics["duration"]}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Dependency Graph</div>
+                <div class="panel-caption">Left-to-right execution topology with live status encoding.</div>
+            </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    nodes, edges, config = build_graph(tasks, results)
+    if nodes:
+        agraph(nodes=nodes, edges=edges, config=config)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    col_a, col_b = st.columns([1.05, 0.95], gap="large")
+
+    with col_a:
+        st.markdown(
+            """
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Task Ledger</div>
+                    <div class="panel-caption">Status, execution time, and task-level terminal state.</div>
+                </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if results:
+            rows = []
+            for name, res in results.items():
+                rows.append(
+                    {
+                        "Task": name,
+                        "Status": res["status"].upper(),
+                        "Duration": f"{res.get('execution_time') or 0:.2f}s",
+                    }
+                )
+            st.dataframe(rows, use_container_width=True, hide_index=True, height=360)
+        else:
+            st.markdown("<div class='empty-state'>No task results have been persisted yet.</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col_b:
+        st.markdown(
+            """
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Execution Tail</div>
+                    <div class="panel-caption">Recent orchestrator output and task logs.</div>
+                </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if logs and logs.strip():
+            st.markdown(f"<div class='log-viewer'>{escape(logs)}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='empty-state'>No logs available for the selected run.</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 dashboard(selected_run_id)

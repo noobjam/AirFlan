@@ -9,6 +9,7 @@ import json
 import subprocess
 import threading
 import time
+import uuid
 import webbrowser
 from datetime import datetime
 from functools import wraps
@@ -84,6 +85,8 @@ class WorkflowOrchestrator:
         self.context = WorkflowContext(experiment_tracker=self.experiment_tracker)
         self.cache = CacheManager(enabled=enable_cache)
         self.executor = executor or ParallelExecutor(max_workers=max_parallel)
+        if hasattr(self.executor, "set_cache_manager"):
+            self.executor.set_cache_manager(self.cache)
         
         # State management
         self.state_manager = StateManager()
@@ -263,7 +266,11 @@ class WorkflowOrchestrator:
             logger.info("Started experiment run")
         
         workflow_start = time.time()
-        run_id = f"run_{self.name}_{int(workflow_start)}"
+        run_id = (
+            f"run_{self.name}_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_"
+            f"{uuid.uuid4().hex[:8]}"
+        )
         self.state_manager.start_run(self.name, run_id)
         
         try:
@@ -309,7 +316,10 @@ class WorkflowOrchestrator:
                         )
                     else:
                         # Use sequential for custom executors
-                        seq_exec = SequentialExecutor(cache_enabled=self.cache.enabled)
+                        seq_exec = SequentialExecutor(
+                            cache_enabled=self.cache.enabled,
+                            cache_manager=self.cache
+                        )
                         seq_exec.execute_tasks(
                             sorted_tasks, self.context,
                             self._check_dependencies, self._check_condition,
@@ -317,7 +327,10 @@ class WorkflowOrchestrator:
                             on_update=update_callback
                         )
                 else:
-                    seq_exec = SequentialExecutor(cache_enabled=self.cache.enabled)
+                    seq_exec = SequentialExecutor(
+                        cache_enabled=self.cache.enabled,
+                        cache_manager=self.cache
+                    )
                     seq_exec.execute_tasks(
                         sorted_tasks, self.context,
                         self._check_dependencies, self._check_condition,
@@ -412,7 +425,7 @@ class WorkflowOrchestrator:
         for dep in task.depends_on:
             if dep not in self.results:
                 return False
-            if self.results[dep].status == TaskStatus.FAILED:
+            if self.results[dep].status in {TaskStatus.FAILED, TaskStatus.TIMEOUT}:
                 if not self.tasks[dep].skip_on_failure:
                     return False
         return True

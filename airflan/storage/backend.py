@@ -41,6 +41,9 @@ class TaskInstance(Base):
 class XCom(Base):
     """Tracks data passed between tasks (Cross-Communication)"""
     __tablename__ = 'xcom'
+    __table_args__ = (
+        UniqueConstraint('run_id', 'task_id', 'key', name='_run_task_key_uc'),
+    )
     
     id = Column(Integer, primary_key=True)
     task_id = Column(String(250), nullable=False)
