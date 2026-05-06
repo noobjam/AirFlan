@@ -80,6 +80,42 @@ To launch the UI, simply run your workflow with `enable_ui=True`. The dashboard 
 *   **Execution Logs**: Live stream of task logs.
 *   **Performance Stats**: Task duration and status distribution.
 
+## Scheduler, Workers, and Postgres
+
+For product-style operation, run AirFlan with a shared metadata database. SQLite is still the default for local demos, but Postgres is recommended when running the scheduler and one or more workers.
+
+Start a local Postgres with Podman:
+
+```bash
+sh scripts/podman-postgres.sh start
+export AIRFLAN_DATABASE_URL="postgresql+psycopg://airflan:airflan@localhost:5432/airflan"
+airflan initdb
+```
+
+Run the operational processes in separate terminals:
+
+```bash
+airflan scheduler --workflows-dir workflows
+airflan worker --workflows-dir workflows
+airflan webserver
+```
+
+Useful Podman helper commands:
+
+```bash
+sh scripts/podman-postgres.sh status
+sh scripts/podman-postgres.sh logs
+sh scripts/podman-postgres.sh stop
+```
+
+You can also pass the database explicitly instead of using the environment:
+
+```bash
+airflan scheduler --db-url "$AIRFLAN_DATABASE_URL"
+airflan worker --db-url "$AIRFLAN_DATABASE_URL" --worker-id worker-a
+airflan webserver --db-url "$AIRFLAN_DATABASE_URL"
+```
+
 ## 🧪 Experiment Tracking (NEW!)
 
 AirFlan now includes native experiment tracking for MLOps workflows! Track metrics, parameters, and artifacts just like MLflow or W&B, but fully integrated with your workflows.

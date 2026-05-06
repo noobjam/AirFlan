@@ -231,7 +231,8 @@ class WorkflowOrchestrator:
         self,
         parallel: bool = True,
         dry_run: bool = False,
-        enable_ui: bool = True
+        enable_ui: bool = True,
+        run_id: Optional[str] = None
     ) -> Dict[str, TaskResult]:
         """
         Execute the workflow
@@ -240,10 +241,12 @@ class WorkflowOrchestrator:
             parallel: Enable parallel execution
             dry_run: Print plan without executing
             enable_ui: Launch Streamlit UI
+            run_id: Optional existing run id from the scheduler queue
             
         Returns:
             Dictionary of task results
         """
+        self.results = {}
         self._print_banner()
         
         self.logger.info(f"{'='*70}")
@@ -266,7 +269,7 @@ class WorkflowOrchestrator:
             logger.info("Started experiment run")
         
         workflow_start = time.time()
-        run_id = (
+        run_id = run_id or (
             f"run_{self.name}_"
             f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_"
             f"{uuid.uuid4().hex[:8]}"
@@ -337,6 +340,8 @@ class WorkflowOrchestrator:
                         self.results, self._results_lock,
                         on_update=update_callback
                     )
+
+                self._raise_for_critical_failures(sorted_tasks)
                 
                 # Update UI state after each level
                 self.state_manager.update_state(self.name, self.tasks, self.results)
@@ -363,6 +368,7 @@ class WorkflowOrchestrator:
             self.logger.error(f"Workflow failed: {str(e)}")
             import traceback
             self.logger.debug(traceback.format_exc())
+            self._finalize_unresolved_tasks()
             self._print_summary()
             
             # End experiment run with failure
@@ -425,7 +431,12 @@ class WorkflowOrchestrator:
         for dep in task.depends_on:
             if dep not in self.results:
                 return False
-            if self.results[dep].status in {TaskStatus.FAILED, TaskStatus.TIMEOUT}:
+            if self.results[dep].status in {
+                TaskStatus.FAILED,
+                TaskStatus.TIMEOUT,
+                TaskStatus.UPSTREAM_FAILED,
+                TaskStatus.CANCELLED,
+            }:
                 if not self.tasks[dep].skip_on_failure:
                     return False
         return True
@@ -475,7 +486,9 @@ class WorkflowOrchestrator:
                 'completed': '✓',
                 'failed': '✗',
                 'skipped': '⊘',
-                'timeout': '⏱'
+                'timeout': '⏱',
+                'upstream_failed': '⇢',
+                'cancelled': '⊘'
             }.get(status, '?')
             
             self.logger.info(
@@ -489,6 +502,56 @@ class WorkflowOrchestrator:
         
         self.logger.info(f"\nTotal task execution time: {total_time:.2f}s")
         self.logger.info("="*70)
+
+    def _raise_for_critical_failures(self, tasks: List[Task]) -> None:
+        """Stop the workflow after a parallel level if a critical task failed."""
+        for task in tasks:
+            result = self.results.get(task.name)
+            if not result or task.skip_on_failure:
+                continue
+            if result.status in {TaskStatus.FAILED, TaskStatus.TIMEOUT}:
+                raise Exception(f"Critical task {task.name} failed. Stopping workflow.")
+
+    def _finalize_unresolved_tasks(self) -> None:
+        """Assign terminal states to tasks that did not run before failure."""
+        now = datetime.now().isoformat()
+        changed = True
+
+        while changed:
+            changed = False
+            for name, task in self.tasks.items():
+                if name in self.results:
+                    continue
+
+                has_failed_dependency = any(
+                    dep in self.results
+                    and self.results[dep].status in {
+                        TaskStatus.FAILED,
+                        TaskStatus.TIMEOUT,
+                        TaskStatus.UPSTREAM_FAILED,
+                        TaskStatus.CANCELLED,
+                    }
+                    and not self.tasks[dep].skip_on_failure
+                    for dep in task.depends_on
+                )
+
+                if has_failed_dependency:
+                    self.results[name] = TaskResult(
+                        status=TaskStatus.UPSTREAM_FAILED,
+                        start_time=now,
+                        end_time=now,
+                        attempt_count=0,
+                    )
+                    changed = True
+
+        for name in self.tasks:
+            if name not in self.results:
+                self.results[name] = TaskResult(
+                    status=TaskStatus.CANCELLED,
+                    start_time=now,
+                    end_time=now,
+                    attempt_count=0,
+                )
     
     def _save_execution_history(self, workflow_time: float):
         """Save execution history"""

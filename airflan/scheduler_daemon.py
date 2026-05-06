@@ -1,8 +1,5 @@
-import importlib.util
-import inspect
-import sys
 import time
-import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
@@ -11,6 +8,7 @@ from croniter import croniter
 
 from airflan.orchestrator import WorkflowOrchestrator
 from airflan.storage.backend import DatabaseSession, DagRun
+from airflan.workflow_loader import load_workflows
 
 class SchedulerDaemon:
     """
@@ -28,8 +26,6 @@ class SchedulerDaemon:
         self.parse_interval = parse_interval
         self.known_workflows: Dict[str, WorkflowOrchestrator] = {}
         self.workflow_schedules: Dict[str, str] = {} # dag_id -> cron_string
-        self._active_runs = set()
-        self._active_runs_lock = threading.Lock()
         
         self.db = DatabaseSession(db_url)
         self.db.init_db()
@@ -39,44 +35,23 @@ class SchedulerDaemon:
         
     def _parse_workflows(self):
         """Scan directory for Python files containing WorkflowOrchestrator objects"""
-        logger.info(f"Scanning {self.workflows_dir} for workflows...")
-        
-        for file_path in self.workflows_dir.glob("**/*.py"):
-            try:
-                # Dynamically load the python module
-                module_name = file_path.stem
-                spec = importlib.util.spec_from_file_location(module_name, str(file_path))
-                if spec and spec.loader:
-                    module = importlib.util.module_from_spec(spec)
-                    sys.modules[module_name] = module
-                    spec.loader.exec_module(module)
-                    
-                    # Find WorkflowOrchestrator instances in the module
-                    for name, obj in inspect.getmembers(module):
-                        if isinstance(obj, WorkflowOrchestrator):
-                            self.known_workflows[obj.name] = obj
-                            # Check if a schedule was defined (we will add this attr to WorkflowOrchestrator next)
-                            if hasattr(obj, 'schedule') and obj.schedule:
-                                self.workflow_schedules[obj.name] = obj.schedule
-                            
-                            logger.info(f"Discovered workflow: {obj.name} in {file_path.name} (Schedule: {getattr(obj, 'schedule', 'None')})")
-            except Exception as e:
-                logger.error(f"Failed to parse {file_path}: {e}")
+        self.known_workflows = load_workflows(self.workflows_dir)
+        self.workflow_schedules = {
+            workflow.name: workflow.schedule
+            for workflow in self.known_workflows.values()
+            if workflow.schedule
+        }
                 
     def _should_run_workflow(self, dag_id: str, cron_string: str) -> bool:
         """Evaluate if a workflow should run right now based on its cron schedule"""
-        with self._active_runs_lock:
-            if dag_id in self._active_runs:
-                return False
-
         session = self.db.get_session()
         try:
-            running_run = session.query(DagRun).filter(
+            active_run = session.query(DagRun).filter(
                 DagRun.dag_id == dag_id,
-                DagRun.status == "running"
+                DagRun.status.in_(["queued", "running"])
             ).order_by(DagRun.start_time.desc()).first()
 
-            if running_run:
+            if active_run:
                 return False
 
             # Find the last completed or failed run
@@ -104,33 +79,31 @@ class SchedulerDaemon:
         finally:
             session.close()
 
-    def _trigger_workflow(self, orchestrator: WorkflowOrchestrator):
-        """Execute the workflow in a non-blocking process/thread. 
-           In Phase 4 we will spawn a subprocess to avoid blocking the scheduler loop.
-        """
-        with self._active_runs_lock:
-            if orchestrator.name in self._active_runs:
-                logger.info(f"Skipping {orchestrator.name} - run already active")
-                return
-            self._active_runs.add(orchestrator.name)
+    def _enqueue_workflow(self, orchestrator: WorkflowOrchestrator) -> str:
+        """Create a queued DagRun for workers to claim."""
+        run_id = (
+            f"scheduled_{orchestrator.name}_"
+            f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}_"
+            f"{uuid.uuid4().hex[:8]}"
+        )
 
-        logger.info(f"Triggering scheduled workflow: {orchestrator.name}")
-        # Assuming the workflow file can be executed directly as `python filename.py`
-        # In a pure daemon, we might pickle it and send it to a worker. 
-        # For this phase, we'll run it in a subprocess using a generic AirFlan CLI entrypoint (Phase 5).
-        # For now, we will just call it in a thread so the scheduler loop continues.
-        
-        def run_it():
-            try:
-                orchestrator.run(parallel=True, enable_ui=False)
-            except Exception as e:
-                logger.error(f"Scheduled run failed: {e}")
-            finally:
-                with self._active_runs_lock:
-                    self._active_runs.discard(orchestrator.name)
-                
-        t = threading.Thread(target=run_it, daemon=True)
-        t.start()
+        session = self.db.get_session()
+        try:
+            dag_run = DagRun(
+                dag_id=orchestrator.name,
+                run_id=run_id,
+                status="queued",
+                start_time=datetime.utcnow(),
+            )
+            session.add(dag_run)
+            session.commit()
+            logger.info(f"Queued workflow run: {orchestrator.name} ({run_id})")
+            return run_id
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
     def run(self):
         """Start the infinite scheduler loop"""
@@ -146,7 +119,7 @@ class SchedulerDaemon:
                 for dag_id, cron_string in self.workflow_schedules.items():
                     if self._should_run_workflow(dag_id, cron_string):
                         orchestrator = self.known_workflows[dag_id]
-                        self._trigger_workflow(orchestrator)
+                        self._enqueue_workflow(orchestrator)
                         
                 # 3. Sleep until next parser cycle
                 time.sleep(self.parse_interval)

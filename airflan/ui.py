@@ -330,6 +330,8 @@ STATUS_COLORS = {
     "pending": "#7f93a8",
     "skipped": "#93a5b8",
     "timeout": "#f4b740",
+    "upstream_failed": "#ff8a9e",
+    "cancelled": "#7f93a8",
 }
 
 
@@ -477,7 +479,11 @@ def compute_metrics(state):
 
     total = len(tasks)
     completed = sum(1 for r in results.values() if r["status"] == "completed")
-    failed = sum(1 for r in results.values() if r["status"] in {"failed", "timeout"})
+    failed = sum(
+        1
+        for r in results.values()
+        if r["status"] in {"failed", "timeout", "upstream_failed", "cancelled"}
+    )
     running = sum(1 for r in results.values() if r["status"] == "running")
     skipped = sum(1 for r in results.values() if r["status"] == "skipped")
     pending = max(total - len(results), 0)
@@ -531,7 +537,7 @@ def build_graph(tasks, results):
                 shapeProperties={"borderRadius": 8},
                 borderWidth=2,
                 borderWidthSelected=3,
-                shadow={"enabled": status in {"running", "failed", "timeout"}, "color": color, "size": 12, "x": 0, "y": 0},
+                shadow={"enabled": status in {"running", "failed", "timeout", "upstream_failed"}, "color": color, "size": 12, "x": 0, "y": 0},
             )
         )
 

@@ -34,6 +34,15 @@ class StateManager:
         self.run_id = run_id
         session = self.db.get_session()
         try:
+            existing_run = session.query(DagRun).filter_by(run_id=run_id).first()
+            if existing_run:
+                existing_run.status = "running"
+                existing_run.start_time = datetime.utcnow()
+                existing_run.end_time = None
+                session.commit()
+                logger.debug(f"Started existing DagRun: {run_id}")
+                return
+
             # Create a new DagRun entry
             dag_run = DagRun(
                 dag_id=workflow_name,
@@ -72,13 +81,20 @@ class StateManager:
             session = self.db.get_session()
             try:
                 # Check if workflow is finished
-                terminal_statuses = {'completed', 'failed', 'skipped', 'timeout'}
+                terminal_statuses = {
+                    'completed',
+                    'failed',
+                    'skipped',
+                    'timeout',
+                    'upstream_failed',
+                    'cancelled',
+                }
                 is_finished = (
                     len(results) == len(tasks)
                     and all(r.status.value in terminal_statuses for r in results.values())
                 )
                 has_failures = any(
-                    r.status.value in {'failed', 'timeout'}
+                    r.status.value in {'failed', 'timeout', 'upstream_failed', 'cancelled'}
                     for r in results.values()
                 )
                 
@@ -135,7 +151,7 @@ class StateManager:
                         "name": workflow_name,
                         "status": "completed" if is_finished and not has_failures else "failed" if is_finished else "running",
                         "tasks": {
-                            name: {"depends_on": task.depends_on} 
+                            name: {"depends_on": task.depends_on}
                             for name, task in tasks.items()
                         }
                     }

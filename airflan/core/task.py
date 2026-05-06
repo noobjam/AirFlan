@@ -21,6 +21,8 @@ class TaskStatus(Enum):
     FAILED = "failed"
     SKIPPED = "skipped"  # Fixed typo from "skiped"
     TIMEOUT = "timeout"
+    UPSTREAM_FAILED = "upstream_failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass

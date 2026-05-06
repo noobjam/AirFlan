@@ -17,5 +17,6 @@ pytest>=7.0.0
 dask
 distributed
 sqlalchemy
+psycopg[binary]>=3.1
 croniter
 click
