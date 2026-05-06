@@ -9,10 +9,21 @@ POSTGRES_USER="${AIRFLAN_POSTGRES_USER:-airflan}"
 POSTGRES_PASSWORD="${AIRFLAN_POSTGRES_PASSWORD:-airflan}"
 POSTGRES_DB="${AIRFLAN_POSTGRES_DB:-airflan}"
 
+if [ -n "${AIRFLAN_CONTAINER_RUNTIME:-}" ]; then
+    RUNTIME="$AIRFLAN_CONTAINER_RUNTIME"
+elif command -v podman >/dev/null 2>&1; then
+    RUNTIME="podman"
+elif command -v docker >/dev/null 2>&1; then
+    RUNTIME="docker"
+else
+    printf '%s\n' "Neither podman nor docker was found on PATH." >&2
+    exit 127
+fi
+
 case "${1:-start}" in
     start)
-        podman volume exists "$VOLUME_NAME" || podman volume create "$VOLUME_NAME"
-        podman run \
+        "$RUNTIME" volume inspect "$VOLUME_NAME" >/dev/null 2>&1 || "$RUNTIME" volume create "$VOLUME_NAME"
+        "$RUNTIME" run \
             --replace \
             --name "$CONTAINER_NAME" \
             -p "${POSTGRES_PORT}:5432" \
@@ -24,17 +35,17 @@ case "${1:-start}" in
         printf '%s\n' "AIRFLAN_DATABASE_URL=postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}"
         ;;
     stop)
-        podman stop "$CONTAINER_NAME"
+        "$RUNTIME" stop "$CONTAINER_NAME"
         ;;
     logs)
-        podman logs -f "$CONTAINER_NAME"
+        "$RUNTIME" logs -f "$CONTAINER_NAME"
         ;;
     status)
-        podman ps --filter "name=${CONTAINER_NAME}"
+        "$RUNTIME" ps --filter "name=${CONTAINER_NAME}"
         ;;
     reset)
-        podman rm -f "$CONTAINER_NAME" 2>/dev/null || true
-        podman volume rm -f "$VOLUME_NAME"
+        "$RUNTIME" rm -f "$CONTAINER_NAME" 2>/dev/null || true
+        "$RUNTIME" volume rm -f "$VOLUME_NAME"
         ;;
     *)
         printf '%s\n' "Usage: $0 [start|stop|logs|status|reset]" >&2

@@ -92,6 +92,12 @@ export AIRFLAN_DATABASE_URL="postgresql+psycopg://airflan:airflan@localhost:5432
 airflan initdb
 ```
 
+The helper uses Podman by default when it is available. It can also run with Docker:
+
+```bash
+AIRFLAN_CONTAINER_RUNTIME=docker sh scripts/podman-postgres.sh start
+```
+
 Run the operational processes in separate terminals:
 
 ```bash
